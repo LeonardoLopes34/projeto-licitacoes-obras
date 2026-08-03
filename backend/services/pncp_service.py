@@ -180,7 +180,7 @@ async def search_licitacoes_construction(
     }
 
     # Timeout total por requisição paralela
-    timeout = httpx.Timeout(15.0, connect=4.0)
+    timeout = httpx.Timeout(20.0, connect=4.0)
 
     try:
         async with httpx.AsyncClient(timeout=timeout, verify=False, follow_redirects=True) as client:
