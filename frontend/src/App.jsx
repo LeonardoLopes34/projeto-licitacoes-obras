@@ -25,17 +25,36 @@ export default function App() {
   const [forceMock, setForceMock] = useState(false);
 
   // Formata data YYYY-MM-DD para YYYYMMDD exigido pela API
-  const formatDateForApi = (dateStr) => dateStr.replaceAll("-", "");
+  const formatDateForApi = (dateStr) => (dateStr ? dateStr.replaceAll("-", "") : "");
 
-  const fetchObras = async () => {
+  const fetchObras = async (abortSignal) => {
+    const signal = abortSignal instanceof AbortSignal ? abortSignal : undefined;
+    const pInicial = formatDateForApi(inicialDate);
+    const pFinal = formatDateForApi(finalDate);
+
+    if (!pInicial || !pFinal || pInicial.length !== 8 || pFinal.length !== 8) {
+      setStatusInfo({
+        status: "aviso",
+        mensagem: "Por favor, selecione datas válidas.",
+        total: 0,
+      });
+      return;
+    }
+
+    if (pInicial > pFinal) {
+      setStatusInfo({
+        status: "aviso",
+        mensagem: "A data inicial não pode ser maior que a data final.",
+        total: 0,
+      });
+      return;
+    }
+
     setLoading(true);
     try {
-      const pInicial = formatDateForApi(inicialDate);
-      const pFinal = formatDateForApi(finalDate);
-
       const url = `http://127.0.0.1:8000/api/v1/obras?inicial_date=${pInicial}&final_date=${pFinal}&modalidade=${modalidade}&max_paginas=${maxPaginas}&force_mock=${forceMock}`;
 
-      const res = await fetch(url);
+      const res = await fetch(url, { signal });
       const data = await res.json();
 
       setObras(data.dados || []);
@@ -45,6 +64,7 @@ export default function App() {
         total: data.total_encontradas,
       });
     } catch (err) {
+      if (err.name === "AbortError") return;
       console.error("Erro ao conectar no backend:", err);
       setStatusInfo({
         status: "erro",
@@ -58,8 +78,15 @@ export default function App() {
   };
 
   useEffect(() => {
-    fetchObras();
-  }, []);
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      fetchObras(controller.signal);
+    }, 400);
+    return () => {
+      clearTimeout(timer);
+      controller.abort(); // cancela fetch anterior se filtro mudar de novo
+    };
+  }, [inicialDate, finalDate, modalidade, maxPaginas, forceMock]);
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 font-sans p-6">
@@ -81,7 +108,7 @@ export default function App() {
           </div>
 
           <button
-            onClick={fetchObras}
+            onClick={() => fetchObras()}
             disabled={loading}
             className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-medium transition duration-200 disabled:opacity-50 cursor-pointer shadow-lg shadow-blue-600/20"
           >
@@ -166,13 +193,12 @@ export default function App() {
         {/* BARRA DE STATUS DA API */}
         {statusInfo && (
           <div
-            className={`border rounded-xl p-4 flex items-center justify-between text-sm ${
-              statusInfo.status.includes("sucesso_real")
-                ? "bg-emerald-950/40 border-emerald-800/60 text-emerald-300"
-                : statusInfo.status.includes("mock")
-                  ? "bg-amber-950/40 border-amber-800/60 text-amber-300"
-                  : "bg-rose-950/40 border-rose-800/60 text-rose-300"
-            }`}
+            className={`border rounded-xl p-4 flex items-center justify-between text-sm ${statusInfo.status.includes("sucesso_real")
+              ? "bg-emerald-950/40 border-emerald-800/60 text-emerald-300"
+              : statusInfo.status.includes("mock")
+                ? "bg-amber-950/40 border-amber-800/60 text-amber-300"
+                : "bg-rose-950/40 border-rose-800/60 text-rose-300"
+              }`}
           >
             <div className="flex items-center gap-3">
               {statusInfo.status.includes("sucesso_real") ? (
@@ -233,11 +259,10 @@ export default function App() {
                     </span>
 
                     <span
-                      className={`text-[10px] font-mono px-2 py-0.5 rounded border ${
-                        obra.fonte === "PNCP_REAL"
-                          ? "bg-emerald-950 text-emerald-400 border-emerald-800/50"
-                          : "bg-amber-950 text-amber-400 border-amber-800/50"
-                      }`}
+                      className={`text-[10px] font-mono px-2 py-0.5 rounded border ${obra.fonte === "PNCP_REAL"
+                        ? "bg-emerald-950 text-emerald-400 border-emerald-800/50"
+                        : "bg-amber-950 text-amber-400 border-amber-800/50"
+                        }`}
                     >
                       {obra.fonte}
                     </span>

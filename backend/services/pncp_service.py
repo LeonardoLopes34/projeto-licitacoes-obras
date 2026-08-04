@@ -1,7 +1,12 @@
 import httpx
 import unicodedata
 import asyncio
+import time
 from typing import List, Dict, Any
+
+# Simple in-memory cache to prevent hitting PNCP rate limits on repeated filter changes
+_CACHE: Dict[str, Dict[str, Any]] = {}
+CACHE_TTL_SECONDS = 180
 
 # ==========================================
 # 1. (MOCK DATA)
@@ -103,10 +108,16 @@ def is_interesting_construction(objeto: str) -> bool:
 
     return any(kw in objeto_limpo for kw in KEYWORDS_OBRAS)
 
-def processar_itens_raw(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def processar_itens_raw(items: List[Dict[str, Any]], data_inicial: str = None, data_final: str = None) -> List[Dict[str, Any]]:
     """Aplica o filtro de keywords e formata os dados para o padrão da aplicação."""
     resultados = []
     for item in items:
+        pub_date = item.get("dataPublicacaoPncp") or ""
+        if data_inicial and data_final and pub_date:
+            date_clean = pub_date[:10].replace("-", "")
+            if len(date_clean) == 8 and not (data_inicial <= date_clean <= data_final):
+                continue
+
         objeto = item.get("objetoCompra") or item.get("objeto") or ""
 
         if is_interesting_construction(objeto):
@@ -134,7 +145,7 @@ def processar_itens_raw(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 # ==========================================
 # 3. WORKER ASSÍNCRONO DE PÁGINA INDIVIDUAL
 # ==========================================
-async def fetch_pagina(client: httpx.AsyncClient, url: str, params: dict, headers: dict) -> List[dict]:
+async def fetch_pagina(client: httpx.AsyncClient, url: str, params: dict, headers: dict):
     # Pequeno atraso baseado no número da página para não golpear o servidor do PNCP de uma vez só
     pagina = params.get("pagina", 1)
     if pagina > 1:
@@ -143,11 +154,13 @@ async def fetch_pagina(client: httpx.AsyncClient, url: str, params: dict, header
     try:
         response = await client.get(url, params=params, headers=headers)
         if response.status_code == 200:
-            return response.json().get("data", [])
-        return []
+            return (True, response.json().get("data", []))
+        else:
+            print(f"⚠️ PNCP retornou status {response.status_code} na página {pagina}")
+            return (False, [])
     except Exception as e:
         print(f"⚠️ Erro ao buscar página {pagina}: {type(e).__name__}")
-        return []
+        return (False, [])
 
 # ==========================================
 # 4. SERVICE PRINCIPAL COM BUSCA PARALELA
@@ -163,7 +176,7 @@ async def search_licitacoes_construction(
     
     if force_mock:
         print("🛠️ [MODO MOCK ATIVADO MANUALMENTE]")
-        dados_filtrados = processar_itens_raw(MOCK_LICITACOES_BASE)
+        dados_filtrados = processar_itens_raw(MOCK_LICITACOES_BASE, data_inicial, data_final)
         for item in dados_filtrados:
             item["fonte"] = "MOCK_LOCAL"
         return {
@@ -173,20 +186,32 @@ async def search_licitacoes_construction(
             "dados": dados_filtrados
         }
 
+    # Verificar Cache em memória
+    cache_key = f"{data_inicial}_{data_final}_{modalidade}_{tamanho_pagina}_{max_paginas}"
+    now = time.time()
+    if cache_key in _CACHE:
+        cached_entry = _CACHE[cache_key]
+        if now - cached_entry["timestamp"] < CACHE_TTL_SECONDS:
+            print(f"⚡ [CACHE HIT] Retornando dados salvos em cache para a chave: {cache_key}")
+            return cached_entry["data"]
+
     url = "https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao"
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "application/json"
     }
 
-    # Timeout total por requisição paralela
-    timeout = httpx.Timeout(20.0, connect=4.0)
+    timeout = httpx.Timeout(30.0, connect=10.0)
 
     try:
+        raw_items = []
+        paginas_sucesso = 0
+
         async with httpx.AsyncClient(timeout=timeout, verify=False, follow_redirects=True) as client:
-            # 1. Monta as tarefas concorrentes para todas as páginas solicitadas
-            tasks = []
             for pagina in range(1, max_paginas + 1):
+                if pagina > 1:
+                    await asyncio.sleep(0.3)  # Delay pequeno para evitar rate limiting
+
                 params = {
                     "dataInicial": data_inicial,
                     "dataFinal": data_final,
@@ -194,26 +219,51 @@ async def search_licitacoes_construction(
                     "pagina": pagina,
                     "tamanhoPagina": tamanho_pagina
                 }
-                tasks.append(fetch_pagina(client, url, params, headers))
+                
+                pagina_obtida = False
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        response = await client.get(url, params=params, headers=headers)
+                        if response.status_code == 200:
+                            paginas_sucesso += 1
+                            items = response.json().get("data", [])
+                            raw_items.extend(items)
+                            pagina_obtida = True
+                            if len(items) < tamanho_pagina:
+                                break
+                            break
+                        elif response.status_code == 429:
+                            backoff = 2.0 * (attempt + 1)
+                            print(f"⚠️ PNCP retornou 429 (Too Many Requests) na página {pagina}. Tentativa {attempt+1}/{max_retries}. Aguardando {backoff}s...")
+                            await asyncio.sleep(backoff)
+                        else:
+                            print(f"⚠️ PNCP retornou status {response.status_code} na página {pagina}")
+                            break
+                    except Exception as e:
+                        print(f"⚠️ Erro na tentativa {attempt+1} ao buscar página {pagina}: {type(e).__name__}")
+                        await asyncio.sleep(0.5)
 
-            paginas_resultados = await asyncio.gather(*tasks)
+                if pagina_obtida and len(raw_items) > 0 and len(raw_items) % tamanho_pagina != 0:
+                    break
 
-            raw_items = [item for sublista in paginas_resultados for item in sublista]
+        if paginas_sucesso > 0:
+            dados_filtrados = processar_itens_raw(raw_items)
+            resultado = {
+                "status": "sucesso_real",
+                "mensagem": f"Analisados {len(raw_items)} itens brutos em {paginas_sucesso} página(s).",
+                "total_encontradas": len(dados_filtrados),
+                "dados": dados_filtrados
+            }
+            # Salvar no cache
+            _CACHE[cache_key] = {"timestamp": time.time(), "data": resultado}
+            return resultado
 
-        if not raw_items:
-            raise httpx.HTTPError("Nenhum item recuperado da API do PNCP.")
-
-        dados_filtrados = processar_itens_raw(raw_items)
-        return {
-            "status": "sucesso_real",
-            "mensagem": f"Analisados {len(raw_items)} itens brutos em paralelo de {max_paginas} páginas.",
-            "total_encontradas": len(dados_filtrados),
-            "dados": dados_filtrados
-        }
+        raise httpx.HTTPError("Não foi possível obter resposta da API do PNCP.")
 
     except Exception as e:
         print(f"🚨 Instabilidade/Timeout detectado no PNCP: {type(e).__name__}. Retornando MOCK de desenvolvimento.")
-        dados_filtrados = processar_itens_raw(MOCK_LICITACOES_BASE)
+        dados_filtrados = processar_itens_raw(MOCK_LICITACOES_BASE, data_inicial, data_final)
         for item in dados_filtrados:
             item["fonte"] = "MOCK_FALLBACK"
             
