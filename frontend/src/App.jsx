@@ -1,34 +1,68 @@
-import React, { useState, useEffect } from "react";
-import {
-  Building2,
-  Search,
-  RefreshCw,
-  ExternalLink,
-  MapPin,
-  Calendar,
-  DollarSign,
-  AlertTriangle,
-  CheckCircle2,
-  Database,
-} from "lucide-react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import Header from "./components/Header";
+import FilterPanel from "./components/FilterPanel";
+import StatusBar from "./components/StatusBar";
+import ObrasList from "./components/ObrasList";
+import AccessibilityFooter from "./components/AccessibilityFooter";
+
+// Retorna a data no formato YYYY-MM-DD com deslocamento de dias
+const getFormattedDate = (offsetDays = 0) => {
+  const date = new Date();
+  date.setDate(date.getDate() + offsetDays);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const DEFAULT_INITIAL_DATE = getFormattedDate(-2);
+const DEFAULT_FINAL_DATE = getFormattedDate(0);
+const DEFAULT_UF = "TODOS";
+const DEFAULT_MODALIDADE = 0;
+const DEFAULT_SORT_BY = "data_desc";
+const DEFAULT_MAX_PAGINAS = 3;
+const DEFAULT_FORCE_MOCK = false;
 
 export default function App() {
   const [obras, setObras] = useState([]);
   const [loading, setLoading] = useState(false);
   const [statusInfo, setStatusInfo] = useState(null);
 
-  // Filtros
-  const [inicialDate, setInicialDate] = useState("2026-08-01");
-  const [finalDate, setFinalDate] = useState("2026-08-03");
-  const [modalidade, setModalidade] = useState(8);
-  const [maxPaginas, setMaxPaginas] = useState(3);
-  const [forceMock, setForceMock] = useState(false);
+  // Controle de Tema: 'dark' (Deep Midnight Navy) ou 'light' (Light Pro) com persistência local
+  const [theme, setTheme] = useState(() => {
+    try {
+      return localStorage.getItem("app-theme") || "dark";
+    } catch {
+      return "dark";
+    }
+  });
+
+  const handleToggleTheme = useCallback(() => {
+    setTheme((prev) => {
+      const nextTheme = prev === "dark" ? "light" : "dark";
+      try {
+        localStorage.setItem("app-theme", nextTheme);
+      } catch {}
+      return nextTheme;
+    });
+  }, []);
+
+  // Filtros de Requisição da API e Frontend
+  const [inicialDate, setInicialDate] = useState(() => DEFAULT_INITIAL_DATE);
+  const [finalDate, setFinalDate] = useState(() => DEFAULT_FINAL_DATE);
+  const [ufFilter, setUfFilter] = useState(DEFAULT_UF);
+  const [modalidade, setModalidade] = useState(DEFAULT_MODALIDADE);
+  const [sortBy, setSortBy] = useState(DEFAULT_SORT_BY);
+  const [maxPaginas, setMaxPaginas] = useState(DEFAULT_MAX_PAGINAS);
+  const [forceMock, setForceMock] = useState(DEFAULT_FORCE_MOCK);
+
+  // Filtro de Pesquisa em Tempo Real no Frontend
+  const [searchTerm, setSearchTerm] = useState("");
 
   // Formata data YYYY-MM-DD para YYYYMMDD exigido pela API
   const formatDateForApi = (dateStr) => (dateStr ? dateStr.replaceAll("-", "") : "");
 
-  const fetchObras = async (abortSignal) => {
-    const signal = abortSignal instanceof AbortSignal ? abortSignal : undefined;
+  const fetchObras = useCallback(async (customSignal) => {
     const pInicial = formatDateForApi(inicialDate);
     const pFinal = formatDateForApi(finalDate);
 
@@ -51,10 +85,25 @@ export default function App() {
     }
 
     setLoading(true);
-    try {
-      const url = `http://127.0.0.1:8000/api/v1/obras?inicial_date=${pInicial}&final_date=${pFinal}&modalidade=${modalidade}&max_paginas=${maxPaginas}&force_mock=${forceMock}`;
 
-      const res = await fetch(url, { signal });
+    const timeoutController = new AbortController();
+    const timeoutId = setTimeout(() => timeoutController.abort(), 18000);
+
+    const onCustomAbort = () => timeoutController.abort();
+    if (customSignal instanceof AbortSignal) {
+      if (customSignal.aborted) {
+        clearTimeout(timeoutId);
+        setLoading(false);
+        return;
+      }
+      customSignal.addEventListener("abort", onCustomAbort);
+    }
+
+    try {
+      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000/api/v1/obras";
+      const url = `${apiBaseUrl}?inicial_date=${pInicial}&final_date=${pFinal}&modalidade=${modalidade}&max_paginas=${maxPaginas}&force_mock=${forceMock}`;
+
+      const res = await fetch(url, { signal: timeoutController.signal });
       const data = await res.json();
 
       setObras(data.dados || []);
@@ -64,18 +113,26 @@ export default function App() {
         total: data.total_encontradas,
       });
     } catch (err) {
-      if (err.name === "AbortError") return;
+      if (customSignal?.aborted) {
+        return;
+      }
       console.error("Erro ao conectar no backend:", err);
       setStatusInfo({
         status: "erro",
         mensagem:
-          "Erro ao conectar com a API FastAPI. Verifique se o backend está rodando.",
+          err.name === "AbortError"
+            ? "Tempo limite esgotado (Timeout). O servidor do PNCP demorou muito para responder."
+            : "Erro ao conectar com a API FastAPI. Verifique se o backend está rodando.",
         total: 0,
       });
     } finally {
+      clearTimeout(timeoutId);
+      if (customSignal instanceof AbortSignal) {
+        customSignal.removeEventListener("abort", onCustomAbort);
+      }
       setLoading(false);
     }
-  };
+  }, [inicialDate, finalDate, modalidade, maxPaginas, forceMock]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -84,230 +141,172 @@ export default function App() {
     }, 400);
     return () => {
       clearTimeout(timer);
-      controller.abort(); // cancela fetch anterior se filtro mudar de novo
+      controller.abort();
     };
-  }, [inicialDate, finalDate, modalidade, maxPaginas, forceMock]);
+  }, [fetchObras]);
+
+  // Atalhos de teclado globais: '/' ou 'Ctrl+K' / 'Cmd+K' para focar a barra de pesquisa
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      const isSearchShortcut =
+        (e.key === "k" && (e.ctrlKey || e.metaKey)) ||
+        (e.key === "/" && !["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName));
+
+      if (isSearchShortcut) {
+        e.preventDefault();
+        const searchInput = document.getElementById("filtro-busca-texto");
+        if (searchInput) {
+          searchInput.focus();
+          searchInput.select();
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  // Filtra e ordena as obras retornadas em tempo real com useMemo para máxima performance
+  const filteredObras = useMemo(() => {
+    let result = obras;
+
+    // Filtro por Estado (UF) em tempo real no frontend
+    if (ufFilter && ufFilter !== "TODOS") {
+      result = result.filter((obra) => {
+        const uf = (obra.uf || "").toUpperCase().trim();
+        return uf === ufFilter.toUpperCase().trim();
+      });
+    }
+
+    // Filtro por termo de pesquisa
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase();
+      result = result.filter((obra) => {
+        const municipio = (obra.municipio || "").toLowerCase();
+        const uf = (obra.uf || "").toLowerCase();
+        const orgao = (obra.orgao || "").toLowerCase();
+        const objeto = (obra.objeto || "").toLowerCase();
+        const modalidadeNome = (obra.modalidade || "").toLowerCase();
+        const fonte = (obra.fonte || "").toLowerCase();
+        const dataPub = (obra.data_publicacao || "").toLowerCase();
+
+        return (
+          municipio.includes(term) ||
+          uf.includes(term) ||
+          orgao.includes(term) ||
+          objeto.includes(term) ||
+          modalidadeNome.includes(term) ||
+          fonte.includes(term) ||
+          dataPub.includes(term)
+        );
+      });
+    }
+
+    // Aplicação da Ordenação
+    return [...result].sort((a, b) => {
+      if (sortBy === "valor_desc") {
+        return (Number(b.valor_estimado) || 0) - (Number(a.valor_estimado) || 0);
+      }
+      if (sortBy === "valor_asc") {
+        return (Number(a.valor_estimado) || 0) - (Number(b.valor_estimado) || 0);
+      }
+      if (sortBy === "orgao") {
+        return (a.orgao || "").localeCompare(b.orgao || "");
+      }
+      if (sortBy === "data_asc") {
+        return new Date(a.data_publicacao || 0) - new Date(b.data_publicacao || 0);
+      }
+      // Padrão: data_desc (mais recente primeiro)
+      return new Date(b.data_publicacao || 0) - new Date(a.data_publicacao || 0);
+    });
+  }, [obras, ufFilter, searchTerm, sortBy]);
+
+  // Volume total estimado somado de todas as obras filtradas
+  const volumeTotal = useMemo(() => {
+    return filteredObras.reduce((acc, curr) => acc + (Number(curr.valor_estimado) || 0), 0);
+  }, [filteredObras]);
+
+  // Contagem de filtros ativos desviando do padrão
+  const activeFiltersCount = useMemo(() => {
+    let count = 0;
+    if (inicialDate !== DEFAULT_INITIAL_DATE) count++;
+    if (finalDate !== DEFAULT_FINAL_DATE) count++;
+    if (ufFilter !== DEFAULT_UF) count++;
+    if (modalidade !== DEFAULT_MODALIDADE) count++;
+    if (sortBy !== DEFAULT_SORT_BY) count++;
+    if (maxPaginas !== DEFAULT_MAX_PAGINAS) count++;
+    if (forceMock !== DEFAULT_FORCE_MOCK) count++;
+    if (searchTerm.trim() !== "") count++;
+    return count;
+  }, [inicialDate, finalDate, ufFilter, modalidade, sortBy, maxPaginas, forceMock, searchTerm]);
+
+  // Restaura todos os filtros para os valores padrão
+  const handleResetFilters = useCallback(() => {
+    setInicialDate(DEFAULT_INITIAL_DATE);
+    setFinalDate(DEFAULT_FINAL_DATE);
+    setUfFilter(DEFAULT_UF);
+    setModalidade(DEFAULT_MODALIDADE);
+    setSortBy(DEFAULT_SORT_BY);
+    setMaxPaginas(DEFAULT_MAX_PAGINAS);
+    setForceMock(DEFAULT_FORCE_MOCK);
+    setSearchTerm("");
+  }, []);
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 font-sans p-6">
+    <div className={`min-h-screen app-bg theme-${theme} font-sans p-4 sm:p-6 lg:p-8 selection:bg-amber-500 selection:text-slate-950 transition-colors duration-200`}>
+      {/* Skip Link para navegabilidade por teclado (WCAG 2.4.1) */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-50 focus:px-4 focus:py-3 focus:bg-amber-500 focus:text-slate-950 focus:font-bold focus:rounded-xl focus:shadow-2xl focus:outline-2 focus:outline-amber-300 transition"
+      >
+        Pular para o conteúdo principal
+      </a>
+
       <div className="max-w-7xl mx-auto space-y-6">
-        {/* HEADER */}
-        <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-6">
-          <div>
-            <div className="flex items-center gap-3">
-              <div className="bg-blue-600 p-2.5 rounded-xl shadow-lg shadow-blue-500/20">
-                <Building2 className="w-6 h-6 text-white" />
-              </div>
-              <h1 className="text-2xl font-bold tracking-tight">
-                Captação de Obras Publicas
-              </h1>
-            </div>
-            <p className="text-slate-400 text-sm mt-1">
-              Filtro inteligente de licitações e engenharia via PNCP
-            </p>
-          </div>
+        <Header
+          onRefresh={() => fetchObras()}
+          loading={loading}
+          theme={theme}
+          onToggleTheme={handleToggleTheme}
+        />
 
-          <button
-            onClick={() => fetchObras()}
-            disabled={loading}
-            className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-medium transition duration-200 disabled:opacity-50 cursor-pointer shadow-lg shadow-blue-600/20"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-            {loading ? "Buscando..." : "Atualizar Dados"}
-          </button>
-        </header>
+        <main id="main-content" tabIndex="-1" className="space-y-6 focus:outline-none">
+          <FilterPanel
+            inicialDate={inicialDate}
+            setInicialDate={setInicialDate}
+            finalDate={finalDate}
+            setFinalDate={setFinalDate}
+            ufFilter={ufFilter}
+            setUfFilter={setUfFilter}
+            modalidade={modalidade}
+            setModalidade={setModalidade}
+            sortBy={sortBy}
+            setSortBy={setSortBy}
+            maxPaginas={maxPaginas}
+            setMaxPaginas={setMaxPaginas}
+            forceMock={forceMock}
+            setForceMock={setForceMock}
+            searchTerm={searchTerm}
+            setSearchTerm={setSearchTerm}
+            activeFiltersCount={activeFiltersCount}
+            onResetFilters={handleResetFilters}
+          />
 
-        {/* PAINEL DE FILTROS */}
-        <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-5 backdrop-blur-md">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                Data Inicial
-              </label>
-              <input
-                type="date"
-                value={inicialDate}
-                onChange={(e) => setInicialDate(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500"
-              />
-            </div>
+          <StatusBar
+            statusInfo={statusInfo}
+            filteredTotal={filteredObras.length}
+            volumeTotal={volumeTotal}
+          />
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                Data Final
-              </label>
-              <input
-                type="date"
-                value={finalDate}
-                onChange={(e) => setFinalDate(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500"
-              />
-            </div>
+          <ObrasList
+            obras={filteredObras}
+            loading={loading}
+            searchTerm={searchTerm}
+            onClearSearch={() => setSearchTerm("")}
+          />
+        </main>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                Modalidade
-              </label>
-              <select
-                value={modalidade}
-                onChange={(e) => setModalidade(Number(e.target.value))}
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500"
-              >
-                <option value={8}>Concorrência Eletrônica (8)</option>
-                <option value={6}>Pregão (6)</option>
-                <option value={4}>Dispensa (4)</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                Profundidade (Páginas)
-              </label>
-              <select
-                value={maxPaginas}
-                onChange={(e) => setMaxPaginas(Number(e.target.value))}
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500"
-              >
-                <option value={1}>1 Página (50 itens)</option>
-                <option value={3}>3 Páginas (150 itens)</option>
-                <option value={5}>5 Páginas (250 itens)</option>
-              </select>
-            </div>
-
-            <div className="flex items-end">
-              <label className="flex items-center gap-2 cursor-pointer bg-slate-900 border border-slate-700 w-full px-3 py-2.5 rounded-xl text-sm hover:border-slate-600 transition">
-                <input
-                  type="checkbox"
-                  checked={forceMock}
-                  onChange={(e) => setForceMock(e.target.checked)}
-                  className="rounded text-blue-600 focus:ring-0 bg-slate-800 border-slate-700"
-                />
-                <span className="text-slate-300 font-medium">
-                  Forçar Mock (Dev)
-                </span>
-              </label>
-            </div>
-          </div>
-        </div>
-
-        {/* BARRA DE STATUS DA API */}
-        {statusInfo && (
-          <div
-            className={`border rounded-xl p-4 flex items-center justify-between text-sm ${statusInfo.status.includes("sucesso_real")
-              ? "bg-emerald-950/40 border-emerald-800/60 text-emerald-300"
-              : statusInfo.status.includes("mock")
-                ? "bg-amber-950/40 border-amber-800/60 text-amber-300"
-                : "bg-rose-950/40 border-rose-800/60 text-rose-300"
-              }`}
-          >
-            <div className="flex items-center gap-3">
-              {statusInfo.status.includes("sucesso_real") ? (
-                <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-              ) : (
-                <AlertTriangle className="w-5 h-5 text-amber-400" />
-              )}
-              <div>
-                <span className="font-semibold">{statusInfo.mensagem}</span>
-                <span className="opacity-75 block text-xs mt-0.5">
-                  Status: {statusInfo.status}
-                </span>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 bg-slate-900/60 px-3 py-1.5 rounded-lg border border-slate-800 font-mono text-xs">
-              <Database className="w-4 h-4" />
-              <span>
-                Obras encontradas: <strong>{statusInfo.total}</strong>
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* LISTA / CARDS DE OBRAS */}
-        {loading ? (
-          <div className="flex flex-col items-center justify-center py-20 gap-3 text-slate-400">
-            <RefreshCw className="w-8 h-8 animate-spin text-blue-500" />
-            <p className="text-sm">
-              Varrendo a API do PNCP e aplicando filtros de engenharia...
-            </p>
-          </div>
-        ) : obras.length === 0 ? (
-          <div className="text-center py-16 bg-slate-800/30 border border-slate-800 rounded-2xl">
-            <Search className="w-10 h-10 text-slate-500 mx-auto mb-3" />
-            <h3 className="text-lg font-semibold text-slate-300">
-              Nenhuma obra encontrada
-            </h3>
-            <p className="text-slate-500 text-sm mt-1">
-              Tente aumentar a quantidade de páginas ou ajustar o intervalo de
-              datas.
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {obras.map((obra, idx) => (
-              <div
-                key={obra.id_pncp || idx}
-                className="bg-slate-800/40 border border-slate-700/50 hover:border-blue-500/50 rounded-2xl p-5 flex flex-col justify-between transition duration-200 hover:shadow-xl hover:shadow-blue-500/5 group"
-              >
-                <div className="space-y-3">
-                  {/* Badge da Fonte + UF/Município */}
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="flex items-center gap-1.5 text-xs font-semibold bg-slate-700/60 text-slate-300 px-2.5 py-1 rounded-lg">
-                      <MapPin className="w-3.5 h-3.5 text-blue-400" />
-                      {obra.municipio
-                        ? `${obra.municipio} - ${obra.uf}`
-                        : obra.uf || "Brasil"}
-                    </span>
-
-                    <span
-                      className={`text-[10px] font-mono px-2 py-0.5 rounded border ${obra.fonte === "PNCP_REAL"
-                        ? "bg-emerald-950 text-emerald-400 border-emerald-800/50"
-                        : "bg-amber-950 text-amber-400 border-amber-800/50"
-                        }`}
-                    >
-                      {obra.fonte}
-                    </span>
-                  </div>
-
-                  {/* Órgão */}
-                  <h2 className="text-sm font-bold text-slate-200 line-clamp-1 group-hover:text-blue-400 transition">
-                    {obra.orgao}
-                  </h2>
-
-                  {/* Objeto */}
-                  <p className="text-xs text-slate-400 line-clamp-3 leading-relaxed">
-                    {obra.objeto}
-                  </p>
-                </div>
-
-                {/* FOOTER DO CARD */}
-                <div className="mt-5 pt-4 border-t border-slate-700/40 flex items-center justify-between gap-2 text-xs">
-                  <div>
-                    <span className="text-slate-500 block text-[10px] uppercase tracking-wider font-medium">
-                      Valor Estimado
-                    </span>
-                    <span className="font-bold text-emerald-400 text-sm flex items-center gap-0.5">
-                      {obra.valor_estimado
-                        ? `R$ ${obra.valor_estimado.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`
-                        : "Não informado"}
-                    </span>
-                  </div>
-
-                  {obra.link_pncp && (
-                    <a
-                      href={obra.link_pncp}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1.5 bg-slate-700/50 hover:bg-blue-600 text-slate-300 hover:text-white px-3 py-1.5 rounded-lg font-medium transition duration-150"
-                    >
-                      Ver no PNCP
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </a>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        <AccessibilityFooter />
       </div>
     </div>
   );

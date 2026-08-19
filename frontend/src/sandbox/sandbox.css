@@ -1,0 +1,147 @@
+@import "tailwindcss";
+
+/* Sandbox Dynamic Theming Engine */
+:root {
+  --sb-bg: #0f172a;
+  --sb-text-main: #f8fafc;
+  --sb-text-muted: #94a3b8;
+  --sb-surface: rgba(30, 41, 59, 0.6);
+  --sb-surface-border: rgba(51, 65, 85, 0.6);
+  --sb-surface-hover: rgba(51, 65, 85, 0.8);
+  --sb-card-bg: rgba(30, 41, 59, 0.45);
+  --sb-card-border: rgba(51, 65, 85, 0.6);
+  --sb-card-hover-border: #3b82f6;
+  --sb-primary: #2563eb;
+  --sb-primary-hover: #1d4ed8;
+  --sb-primary-glow: rgba(37, 99, 235, 0.25);
+  --sb-accent-emerald: #10b981;
+  --sb-accent-amber: #f59e0b;
+  --sb-radius: 16px;
+  --sb-font-scale: 1;
+}
+
+/* Tema Slate Dark */
+.theme-slate {
+  --sb-bg: #060b17;
+  --sb-text-main: #f8fafc;
+  --sb-text-muted: #94a3b8;
+  --sb-surface: rgba(13, 21, 39, 0.85);
+  --sb-surface-border: #1c2a47;
+  --sb-surface-hover: #111c34;
+  --sb-card-bg: rgba(13, 21, 39, 0.9);
+  --sb-card-border: #1c2a47;
+  --sb-card-hover-border: #2a3e66;
+}
+
+/* Tema Midnight Blue */
+.theme-midnight {
+  --sb-bg: #050b1a;
+  --sb-text-main: #f8fafc;
+  --sb-text-muted: #94a3b8;
+  --sb-surface: rgba(13, 21, 39, 0.85);
+  --sb-surface-border: #1c2a47;
+  --sb-surface-hover: #111c34;
+  --sb-card-bg: rgba(13, 21, 39, 0.9);
+  --sb-card-border: #1c2a47;
+  --sb-card-hover-border: #2a3e66;
+}
+
+/* Tema Pure Dark (AMOLED / Preto Absoluto) */
+.theme-puredark {
+  --sb-bg: #000000;
+  --sb-text-main: #ffffff;
+  --sb-text-muted: #a3a3a3;
+  --sb-surface: #121212;
+  --sb-surface-border: #262626;
+  --sb-surface-hover: #1f1f1f;
+  --sb-card-bg: #0a0a0a;
+  --sb-card-border: #262626;
+  --sb-card-hover-border: #525252;
+}
+
+/* Tema Light Pro (Moderno Corporativo) */
+.theme-light {
+  --sb-bg: #f8fafc;
+  --sb-text-main: #0f172a;
+  --sb-text-muted: #475569;
+  --sb-surface: #ffffff;
+  --sb-surface-border: #e2e8f0;
+  --sb-surface-hover: #f1f5f9;
+  --sb-card-bg: #ffffff;
+  --sb-card-border: #cbd5e1;
+  --sb-card-hover-border: #2563eb;
+}
+
+/* Tema Warm Sand (Areia / Tons Construtora) */
+.theme-warm {
+  --sb-bg: #fdfbf7;
+  --sb-text-main: #272320;
+  --sb-text-muted: #57534e;
+  --sb-surface: #ffffff;
+  --sb-surface-border: #e7e5e4;
+  --sb-surface-hover: #f5f5f4;
+  --sb-card-bg: #ffffff;
+  --sb-card-border: #d6d3d1;
+  --sb-card-hover-border: #d97706;
+}
+
+/* Tema High Contrast (Acessibilidade Máxima WCAG AAA) */
+.theme-highcontrast {
+  --sb-bg: #000000;
+  --sb-text-main: #ffffff;
+  --sb-text-muted: #f5f5f5;
+  --sb-surface: #000000;
+  --sb-surface-border: #ffffff;
+  --sb-surface-hover: #171717;
+  --sb-card-bg: #000000;
+  --sb-card-border: #ffffff;
+  --sb-card-hover-border: #38bdf8;
+  --sb-primary: #38bdf8;
+}
+
+/* Estilo dos Cards */
+.card-glass {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.card-elevated {
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
+}
+
+.card-flat {
+  box-shadow: none !important;
+}
+
+/* Densidade */
+.density-compact {
+  --sb-spacing-p: 12px;
+  --sb-spacing-gap: 8px;
+  font-size: 0.875rem;
+}
+
+.density-normal {
+  --sb-spacing-p: 20px;
+  --sb-spacing-gap: 16px;
+}
+
+.density-spacious {
+  --sb-spacing-p: 28px;
+  --sb-spacing-gap: 24px;
+}
+
+/* Acessibilidade e Foco */
+:focus-visible {
+  outline: 2px solid var(--sb-primary) !important;
+  outline-offset: 2px !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

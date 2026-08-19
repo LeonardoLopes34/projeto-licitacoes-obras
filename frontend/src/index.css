@@ -1,1 +1,221 @@
 @import "tailwindcss";
+
+/* WCAG 2 Level AA Accessibility Enhancements */
+
+/* Anéis de foco nítidos e acessíveis para navegação por teclado (Âmbar WCAG AA) */
+:focus-visible {
+  outline: 2px solid #f59e0b !important;
+  outline-offset: 2px !important;
+}
+
+/* Suporte à preferência do usuário por redução de movimento (WCAG 2.3.3 / 2.2.2) */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Utilitário para conteúdo acessível apenas para leitores de tela */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* Elemento sr-only que se torna visível ao receber foco (Skip to content) */
+.sr-only-focusable:focus,
+.sr-only-focusable:focus-visible {
+  position: static;
+  width: auto;
+  height: auto;
+  padding: inherit;
+  margin: inherit;
+  overflow: visible;
+  clip: auto;
+  white-space: normal;
+}
+
+/* ==========================================================================
+   SISTEMA DE TEMAS: DARK (DEEP MIDNIGHT NAVY) & LIGHT PRO (CORPORATE CLEAN)
+   ========================================================================== */
+
+:root,
+.theme-dark {
+  --bg-main: #060b17;
+  --bg-header-border: #1c2a47;
+  --surface-card: #0d1527;
+  --surface-card-hover: #0f1930;
+  --surface-input: #080e1d;
+  --border-subtle: #1c2a47;
+  --border-card: #1c2a47;
+  --border-card-hover: #2a3e66;
+  --border-input: #1a2948;
+  --border-input-hover: #2a3e66;
+  --text-primary: #ffffff;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+  --text-dim: #64748b;
+  --badge-loc-bg: #091124;
+  --badge-loc-border: #182643;
+  --badge-loc-text: #cbd5e1;
+  --badge-mod-bg: rgba(245, 158, 11, 0.1);
+  --badge-mod-border: rgba(245, 158, 11, 0.3);
+  --badge-mod-text: #fbbf24;
+  --accent-amber: #f59e0b;
+  --accent-amber-hover: #fbbf24;
+  --accent-amber-text: #050811;
+  --status-success-bg: #071322;
+  --status-success-border: rgba(6, 95, 70, 0.8);
+  --status-success-text: #e2e8f0;
+  --status-mock-bg: #181106;
+  --status-mock-border: rgba(146, 64, 14, 0.8);
+  --status-mock-text: #fef3c7;
+  --status-badge-bg: #052317;
+  --status-badge-border: #065f46;
+  --status-badge-text: #10b981;
+  --btn-pncp-bg: #0c162c;
+  --btn-pncp-border: #1e3258;
+  --btn-pncp-text: #cbd5e1;
+  --btn-pncp-hover-bg: #16274e;
+  --btn-pncp-hover-border: rgba(59, 130, 246, 0.5);
+  --btn-pncp-hover-text: #ffffff;
+  --btn-action-bg: #091124;
+  --btn-action-hover-bg: #0e1a35;
+  --btn-action-border: #1c2a47;
+  --btn-action-text: #e2e8f0;
+  --card-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.4);
+  --kbd-bg: #0f1b34;
+  --kbd-border: #1e2d4d;
+  --kbd-text: #94a3b8;
+  --scrollbar-track: #060b17;
+  --scrollbar-thumb: #1c2a47;
+  --scrollbar-thumb-hover: #2a3e66;
+}
+
+.theme-light {
+  --bg-main: #f8fafc;
+  --bg-header-border: #e2e8f0;
+  --surface-card: #ffffff;
+  --surface-card-hover: #ffffff;
+  --surface-input: #ffffff;
+  --border-subtle: #e2e8f0;
+  --border-card: #e2e8f0;
+  --border-card-hover: #cbd5e1;
+  --border-input: #cbd5e1;
+  --border-input-hover: #94a3b8;
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --text-muted: #475569;
+  --text-dim: #64748b;
+  --badge-loc-bg: #f1f5f9;
+  --badge-loc-border: #e2e8f0;
+  --badge-loc-text: #334155;
+  --badge-mod-bg: rgba(245, 158, 11, 0.12);
+  --badge-mod-border: rgba(245, 158, 11, 0.35);
+  --badge-mod-text: #b45309;
+  --accent-amber: #d97706;
+  --accent-amber-hover: #b45309;
+  --accent-amber-text: #ffffff;
+  --status-success-bg: #f0fdf4;
+  --status-success-border: #86efac;
+  --status-success-text: #166534;
+  --status-mock-bg: #fffbeb;
+  --status-mock-border: #fcd34d;
+  --status-mock-text: #92400e;
+  --status-badge-bg: #dcfce7;
+  --status-badge-border: #86efac;
+  --status-badge-text: #15803d;
+  --btn-pncp-bg: #f8fafc;
+  --btn-pncp-border: #cbd5e1;
+  --btn-pncp-text: #1d4ed8;
+  --btn-pncp-hover-bg: #eff6ff;
+  --btn-pncp-hover-border: #3b82f6;
+  --btn-pncp-hover-text: #1e40af;
+  --btn-action-bg: #ffffff;
+  --btn-action-hover-bg: #f1f5f9;
+  --btn-action-border: #cbd5e1;
+  --btn-action-text: #1e293b;
+  --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+  --kbd-bg: #f1f5f9;
+  --kbd-border: #cbd5e1;
+  --kbd-text: #475569;
+  --scrollbar-track: #f1f5f9;
+  --scrollbar-thumb: #cbd5e1;
+  --scrollbar-thumb-hover: #94a3b8;
+}
+
+/* Helper Utilities baseadas em variáveis */
+.app-bg {
+  background-color: var(--bg-main);
+  color: var(--text-primary);
+}
+
+.theme-card {
+  background-color: var(--surface-card);
+  border-color: var(--border-card);
+  box-shadow: var(--card-shadow);
+}
+
+.theme-card-hover:hover {
+  background-color: var(--surface-card-hover);
+  border-color: var(--border-card-hover);
+}
+
+.theme-input {
+  background-color: var(--surface-input);
+  border-color: var(--border-input);
+  color: var(--text-primary);
+}
+
+.theme-input:hover {
+  border-color: var(--border-input-hover);
+}
+
+/* Estilo do seletor de calendário nativo */
+.theme-dark input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.7) brightness(1.2);
+  cursor: pointer;
+  opacity: 0.75;
+  transition: opacity 0.2s ease;
+}
+
+.theme-light input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: none;
+  cursor: pointer;
+  opacity: 0.65;
+  transition: opacity 0.2s ease;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
