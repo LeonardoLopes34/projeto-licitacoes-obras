@@ -1,7 +1,7 @@
 import React from "react";
-import { MapPin, ExternalLink, Calendar, Tag } from "lucide-react";
+import { MapPin, ExternalLink, Calendar, Tag, ChevronRight } from "lucide-react";
 
-export default function ObraCard({ obra }) {
+export default function ObraCard({ obra, onSelect }) {
   const cardId = obra.id_pncp || obra.numero_controle_pncp || Math.random().toString(36).substring(2, 9);
 
   const formatDate = (dateStr) => {
@@ -23,13 +23,30 @@ export default function ObraCard({ obra }) {
     ? `R$ ${obra.valor_estimado.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     : "Não informado";
 
+  const handleCardClick = () => {
+    onSelect?.(obra);
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onSelect?.(obra);
+    }
+  };
+
   return (
     <article
+      role="button"
+      tabIndex={0}
+      onClick={handleCardClick}
+      onKeyDown={handleKeyDown}
       aria-labelledby={`obra-title-${cardId}`}
-      className="theme-card theme-card-hover border rounded-2xl p-5 flex flex-col justify-between transition-all duration-200 group"
+      aria-haspopup="dialog"
+      title="Clique para ver os detalhes completos da obra"
+      className="theme-card theme-card-hover border rounded-2xl p-5 flex flex-col justify-between transition-all duration-200 group cursor-pointer focus-visible:outline-2 focus-visible:outline-amber-400 focus-visible:outline-offset-2 select-none"
     >
       <div className="space-y-3">
-        {/* Badge de Localização + Modalidade (Sem a tag PNCP_REAL/MOCK conforme solicitado) */}
+        {/* Badge de Localização + Modalidade */}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span
             className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-lg border transition-colors"
@@ -105,24 +122,27 @@ export default function ObraCard({ obra }) {
           </span>
         </div>
 
-        {obra.link_pncp && (
-          <a
-            href={obra.link_pncp}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label={`Ver detalhes da licitação de ${obra.orgao || 'órgão'} no portal PNCP (abre em nova aba)`}
-            className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 min-h-10 rounded-xl font-bold transition duration-150 border focus-visible:outline-2 focus-visible:outline-amber-400 focus-visible:outline-offset-2 cursor-pointer shadow-sm text-xs"
-            style={{
-              backgroundColor: "var(--btn-pncp-bg)",
-              borderColor: "var(--btn-pncp-border)",
-              color: "var(--btn-pncp-text)",
-            }}
-          >
-            <span>Ver no PNCP</span>
-            <ExternalLink className="w-3.5 h-3.5 opacity-70 group-hover:opacity-100" aria-hidden="true" />
-            <span className="sr-only"> (abre em nova aba)</span>
-          </a>
-        )}
+        <div className="flex items-center gap-2">
+          {obra.link_pncp && (
+            <a
+              href={obra.link_pncp}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              aria-label={`Ver detalhes da licitação de ${obra.orgao || 'órgão'} no portal PNCP (abre em nova aba)`}
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 min-h-10 rounded-xl font-bold transition duration-150 border focus-visible:outline-2 focus-visible:outline-amber-400 focus-visible:outline-offset-2 cursor-pointer shadow-sm text-xs hover:border-amber-500"
+              style={{
+                backgroundColor: "var(--btn-pncp-bg)",
+                borderColor: "var(--btn-pncp-border)",
+                color: "var(--btn-pncp-text)",
+              }}
+            >
+              <span>Ver no PNCP</span>
+              <ExternalLink className="w-3.5 h-3.5 opacity-70 group-hover:opacity-100" aria-hidden="true" />
+              <span className="sr-only"> (abre em nova aba)</span>
+            </a>
+          )}
+        </div>
       </div>
     </article>
   );

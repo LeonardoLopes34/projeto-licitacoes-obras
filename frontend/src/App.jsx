@@ -2,7 +2,9 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import Header from "./components/Header";
 import FilterPanel from "./components/FilterPanel";
 import StatusBar from "./components/StatusBar";
+import MiniDashboard from "./components/MiniDashboard";
 import ObrasList from "./components/ObrasList";
+import ObraDetailModal from "./components/ObraDetailModal";
 import AccessibilityFooter from "./components/AccessibilityFooter";
 
 // Retorna a data no formato YYYY-MM-DD com deslocamento de dias
@@ -20,13 +22,13 @@ const DEFAULT_FINAL_DATE = getFormattedDate(0);
 const DEFAULT_UF = "TODOS";
 const DEFAULT_MODALIDADE = 0;
 const DEFAULT_SORT_BY = "data_desc";
-const DEFAULT_MAX_PAGINAS = 3;
-const DEFAULT_FORCE_MOCK = false;
 
 export default function App() {
   const [obras, setObras] = useState([]);
   const [loading, setLoading] = useState(false);
   const [statusInfo, setStatusInfo] = useState(null);
+  const [selectedObra, setSelectedObra] = useState(null);
+  const [showDashboard, setShowDashboard] = useState(false);
 
   // Controle de Tema: 'dark' (Deep Midnight Navy) ou 'light' (Light Pro) com persistência local
   const [theme, setTheme] = useState(() => {
@@ -53,8 +55,6 @@ export default function App() {
   const [ufFilter, setUfFilter] = useState(DEFAULT_UF);
   const [modalidade, setModalidade] = useState(DEFAULT_MODALIDADE);
   const [sortBy, setSortBy] = useState(DEFAULT_SORT_BY);
-  const [maxPaginas, setMaxPaginas] = useState(DEFAULT_MAX_PAGINAS);
-  const [forceMock, setForceMock] = useState(DEFAULT_FORCE_MOCK);
 
   // Filtro de Pesquisa em Tempo Real no Frontend
   const [searchTerm, setSearchTerm] = useState("");
@@ -101,7 +101,7 @@ export default function App() {
 
     try {
       const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000/api/v1/obras";
-      const url = `${apiBaseUrl}?inicial_date=${pInicial}&final_date=${pFinal}&modalidade=${modalidade}&max_paginas=${maxPaginas}&force_mock=${forceMock}`;
+      const url = `${apiBaseUrl}?inicial_date=${pInicial}&final_date=${pFinal}&modalidade=${modalidade}`;
 
       const res = await fetch(url, { signal: timeoutController.signal });
       const data = await res.json();
@@ -132,7 +132,7 @@ export default function App() {
       }
       setLoading(false);
     }
-  }, [inicialDate, finalDate, modalidade, maxPaginas, forceMock]);
+  }, [inicialDate, finalDate, modalidade]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -234,11 +234,9 @@ export default function App() {
     if (ufFilter !== DEFAULT_UF) count++;
     if (modalidade !== DEFAULT_MODALIDADE) count++;
     if (sortBy !== DEFAULT_SORT_BY) count++;
-    if (maxPaginas !== DEFAULT_MAX_PAGINAS) count++;
-    if (forceMock !== DEFAULT_FORCE_MOCK) count++;
     if (searchTerm.trim() !== "") count++;
     return count;
-  }, [inicialDate, finalDate, ufFilter, modalidade, sortBy, maxPaginas, forceMock, searchTerm]);
+  }, [inicialDate, finalDate, ufFilter, modalidade, sortBy, searchTerm]);
 
   // Restaura todos os filtros para os valores padrão
   const handleResetFilters = useCallback(() => {
@@ -247,8 +245,6 @@ export default function App() {
     setUfFilter(DEFAULT_UF);
     setModalidade(DEFAULT_MODALIDADE);
     setSortBy(DEFAULT_SORT_BY);
-    setMaxPaginas(DEFAULT_MAX_PAGINAS);
-    setForceMock(DEFAULT_FORCE_MOCK);
     setSearchTerm("");
   }, []);
 
@@ -282,10 +278,6 @@ export default function App() {
             setModalidade={setModalidade}
             sortBy={sortBy}
             setSortBy={setSortBy}
-            maxPaginas={maxPaginas}
-            setMaxPaginas={setMaxPaginas}
-            forceMock={forceMock}
-            setForceMock={setForceMock}
             searchTerm={searchTerm}
             setSearchTerm={setSearchTerm}
             activeFiltersCount={activeFiltersCount}
@@ -296,15 +288,35 @@ export default function App() {
             statusInfo={statusInfo}
             filteredTotal={filteredObras.length}
             volumeTotal={volumeTotal}
+            showDashboard={showDashboard}
+            onToggleDashboard={() => setShowDashboard((prev) => !prev)}
           />
+
+          {/* Mini Dashboard Expansível de Estatísticas e Análise */}
+          {showDashboard && (
+            <MiniDashboard
+              obras={obras}
+              onSelectUf={setUfFilter}
+              onSelectModalidade={setModalidade}
+              activeUf={ufFilter}
+              activeModalidade={modalidade}
+            />
+          )}
 
           <ObrasList
             obras={filteredObras}
             loading={loading}
             searchTerm={searchTerm}
             onClearSearch={() => setSearchTerm("")}
+            onSelectObra={setSelectedObra}
           />
         </main>
+
+        {/* Modal de Detalhes da Obra */}
+        <ObraDetailModal
+          obra={selectedObra}
+          onClose={() => setSelectedObra(null)}
+        />
 
         <AccessibilityFooter />
       </div>

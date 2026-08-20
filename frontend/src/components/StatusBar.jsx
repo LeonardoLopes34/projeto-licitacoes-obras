@@ -1,116 +1,101 @@
 import React from "react";
-import { CheckCircle2, AlertTriangle, Info, Box } from "lucide-react";
+import { Coins, HardHat, BarChart2, ChevronDown, ChevronUp } from "lucide-react";
 
-export default function StatusBar({ statusInfo, filteredTotal, volumeTotal }) {
-  if (!statusInfo) return null;
+export default function StatusBar({
+  statusInfo,
+  filteredTotal,
+  volumeTotal,
+  showDashboard = false,
+  onToggleDashboard,
+}) {
+  if (!statusInfo && typeof volumeTotal !== "number") return null;
 
-  const isSuccess = statusInfo.status?.includes("sucesso_real");
-  const isMock = statusInfo.status?.includes("mock");
-  const hasFilter = filteredTotal !== undefined && filteredTotal !== statusInfo.total;
+  const totalObras = statusInfo?.total || filteredTotal || 0;
+  const hasFilter = filteredTotal !== undefined && filteredTotal !== totalObras;
 
   // Formata o volume total para moeda brasileira R$ 000.000.000,00
   const formattedVolume =
     typeof volumeTotal === "number"
       ? `R$ ${volumeTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-      : null;
-
-  // Formata mensagem destacando números em âmbar como no layout
-  const renderHighlightedMessage = (msg) => {
-    if (!msg) return null;
-    const regex = /(\d+\s+itens\s+brutos|\d+\s+página\(s\)|\d+\s+itens|\d+\s+páginas?)/gi;
-    const parts = msg.split(regex);
-    return parts.map((part, index) => {
-      if (regex.test(part)) {
-        return (
-          <span key={index} className="text-amber-500 font-bold">
-            {part}
-          </span>
-        );
-      }
-      return <span key={index}>{part}</span>;
-    });
-  };
+      : "R$ 0,00";
 
   return (
     <div
-      role="status"
-      aria-live="polite"
-      aria-atomic="true"
-      className="border rounded-xl p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 text-xs sm:text-sm transition-colors"
-      style={{
-        backgroundColor: isSuccess
-          ? "var(--status-success-bg)"
-          : isMock
-          ? "var(--status-mock-bg)"
-          : "var(--status-mock-bg)",
-        borderColor: isSuccess
-          ? "var(--status-success-border)"
-          : isMock
-          ? "var(--status-mock-border)"
-          : "var(--status-mock-border)",
-        color: isSuccess
-          ? "var(--status-success-text)"
-          : isMock
-          ? "var(--status-mock-text)"
-          : "var(--status-mock-text)",
-      }}
+      role="region"
+      aria-label="Resumo de Volume Total e Obras Encontradas"
+      className="theme-card border rounded-2xl p-4 sm:p-5 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 transition-colors"
     >
-      {/* LADO ESQUERDO: Ícone + Mensagem + Status */}
-      <div className="flex items-center gap-3">
-        {isSuccess ? (
-          <CheckCircle2 className="w-6 h-6 text-emerald-500 shrink-0" aria-hidden="true" />
-        ) : isMock ? (
-          <AlertTriangle className="w-6 h-6 text-amber-500 shrink-0" aria-hidden="true" />
-        ) : (
-          <Info className="w-6 h-6 text-rose-500 shrink-0" aria-hidden="true" />
-        )}
+      {/* Métrica 1: Volume Total Estimado */}
+      <div className="flex items-center gap-3.5">
+        <div
+          className="p-3 rounded-xl flex items-center justify-center shrink-0 border transition-colors"
+          style={{
+            backgroundColor: "var(--badge-mod-bg)",
+            borderColor: "var(--badge-mod-border)",
+            color: "var(--accent-amber)",
+          }}
+          aria-hidden="true"
+        >
+          <Coins className="w-5 h-5 text-amber-500" />
+        </div>
         <div>
-          <div className="text-xs sm:text-sm font-medium">
-            {renderHighlightedMessage(statusInfo.mensagem)}
-          </div>
-          <div className="text-[11px] mt-0.5 font-mono opacity-80">
-            Status:{" "}
-            <span
-              className={`font-semibold ${
-                isSuccess
-                  ? "text-emerald-500"
-                  : isMock
-                  ? "text-amber-500"
-                  : "text-rose-500"
-              }`}
-            >
-              {statusInfo.status}
-            </span>
-          </div>
+          <span
+            className="block text-[11px] font-bold uppercase tracking-wider"
+            style={{ color: "var(--text-dim)" }}
+          >
+            Volume Total Estimado
+          </span>
+          <span
+            className="text-lg sm:text-2xl font-bold font-mono tracking-tight text-amber-500"
+            aria-label={`Volume total estimado: ${formattedVolume}`}
+          >
+            {formattedVolume}
+          </span>
         </div>
       </div>
 
-      {/* LADO DIREITO: Volume Total + Contador de Obras */}
-      <div className="flex items-center gap-4 self-end md:self-center">
-        {formattedVolume && (
-          <div className="text-right">
-            <span className="block text-[10px] font-bold uppercase tracking-wider opacity-75">
-              Volume Total
-            </span>
-            <span className="text-sm sm:text-base font-bold text-amber-500 font-mono tracking-tight">
-              {formattedVolume}
-            </span>
-          </div>
-        )}
-
+      {/* Métrica 2: Total de Obras & Botão de Estatísticas perfeitamente alinhados */}
+      <div
+        className="flex flex-wrap items-center gap-3 justify-between md:justify-end border-t md:border-t-0 pt-3 md:pt-0"
+        style={{ borderColor: "var(--border-subtle)" }}
+      >
+        {/* Badge Total de Obras */}
         <div
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-mono text-xs font-bold shadow-sm border transition-colors"
+          className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl font-mono text-xs sm:text-sm font-bold border shadow-sm transition-colors min-h-11"
           style={{
             backgroundColor: "var(--status-badge-bg)",
             borderColor: "var(--status-badge-border)",
             color: "var(--status-badge-text)",
           }}
         >
-          <Box className="w-3.5 h-3.5 opacity-80 shrink-0" aria-hidden="true" />
+          <HardHat className="w-4 h-4 opacity-80 shrink-0" aria-hidden="true" />
           <span>
-            Obras: {hasFilter ? `${filteredTotal} de ${statusInfo.total}` : statusInfo.total}
+            {hasFilter ? `${filteredTotal} de ${totalObras} obras` : `${totalObras} obras encontradas`}
           </span>
         </div>
+
+        {/* Botão para Expandir / Ocultar Dashboard de Estatísticas */}
+        {onToggleDashboard && (
+          <button
+            type="button"
+            onClick={onToggleDashboard}
+            aria-expanded={showDashboard}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold border transition cursor-pointer shadow-sm focus-visible:outline-2 focus-visible:outline-amber-400 hover:border-amber-500 min-h-11"
+            style={{
+              backgroundColor: showDashboard ? "var(--badge-mod-bg)" : "var(--btn-pncp-bg)",
+              borderColor: showDashboard ? "var(--accent-amber)" : "var(--btn-pncp-border)",
+              color: showDashboard ? "var(--accent-amber)" : "var(--btn-pncp-text)",
+            }}
+          >
+            <BarChart2 className="w-4 h-4 text-amber-500 shrink-0" aria-hidden="true" />
+            <span>{showDashboard ? "Ocultar Estatísticas" : "Ver Estatísticas"}</span>
+            {showDashboard ? (
+              <ChevronUp className="w-3.5 h-3.5 opacity-80 shrink-0" aria-hidden="true" />
+            ) : (
+              <ChevronDown className="w-3.5 h-3.5 opacity-80 shrink-0" aria-hidden="true" />
+            )}
+          </button>
+        )}
       </div>
     </div>
   );

@@ -43,10 +43,6 @@ export default function FilterPanel({
   setModalidade,
   sortBy = "data_desc",
   setSortBy,
-  maxPaginas,
-  setMaxPaginas,
-  forceMock,
-  setForceMock,
   searchTerm,
   setSearchTerm,
   onResetFilters,
@@ -88,41 +84,6 @@ export default function FilterPanel({
         </div>
 
         <div className="flex items-center gap-3">
-          {setMaxPaginas && (
-            <div className="hidden sm:flex items-center gap-2 text-xs" style={{ color: "var(--text-muted)" }}>
-              <label htmlFor="filtro-max-paginas" className="font-medium" style={{ color: "var(--text-muted)" }}>
-                Páginas:
-              </label>
-              <select
-                id="filtro-max-paginas"
-                value={maxPaginas}
-                onChange={(e) => setMaxPaginas(Number(e.target.value))}
-                className="theme-input border rounded-lg px-2 py-1 text-xs focus-visible:outline-2 focus-visible:outline-amber-400 transition cursor-pointer"
-              >
-                <option value={1}>1 pág (50)</option>
-                <option value={3}>3 págs (150)</option>
-                <option value={5}>5 págs (250)</option>
-              </select>
-            </div>
-          )}
-
-          {setForceMock && (
-            <label
-              htmlFor="filtro-force-mock"
-              className="hidden lg:flex items-center gap-1.5 cursor-pointer text-xs transition-colors"
-              style={{ color: "var(--text-muted)" }}
-            >
-              <input
-                id="filtro-force-mock"
-                type="checkbox"
-                checked={forceMock}
-                onChange={(e) => setForceMock(e.target.checked)}
-                className="w-3.5 h-3.5 rounded accent-amber-500 cursor-pointer"
-              />
-              <span>Mock Dev</span>
-            </label>
-          )}
-
           {onResetFilters && activeFiltersCount > 0 && (
             <button
               type="button"

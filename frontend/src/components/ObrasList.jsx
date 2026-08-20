@@ -3,7 +3,7 @@ import { Search } from "lucide-react";
 import ObraCard from "./ObraCard";
 import ObrasSkeleton from "./ObrasSkeleton";
 
-export default function ObrasList({ obras, loading, searchTerm, onClearSearch }) {
+export default function ObrasList({ obras, loading, searchTerm, onClearSearch, onSelectObra }) {
   if (loading) {
     return (
       <section
@@ -46,7 +46,7 @@ export default function ObrasList({ obras, loading, searchTerm, onClearSearch })
         <p className="text-sm mt-1 max-w-md mx-auto" style={{ color: "var(--text-muted)" }}>
           {searchTerm
             ? "Tente buscar por outro termo, cidade, UF ou órgão público."
-            : "Tente aumentar a quantidade de páginas ou ajustar o intervalo de datas."}
+            : "Tente aumentar o intervalo de datas ou selecionar outra modalidade."}
         </p>
         {searchTerm && onClearSearch && (
           <button
@@ -80,7 +80,11 @@ export default function ObrasList({ obras, loading, searchTerm, onClearSearch })
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {obras.map((obra, idx) => (
-          <ObraCard key={obra.id_pncp || obra.numero_controle_pncp || idx} obra={obra} />
+          <ObraCard
+            key={obra.id_pncp || obra.numero_controle_pncp || idx}
+            obra={obra}
+            onSelect={onSelectObra}
+          />
         ))}
       </div>
     </section>
