@@ -1,13 +1,13 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./sandbox.css";
-import SandboxApp from "./SandboxApp.jsx";
+import NeitImportsApp from "./NeitImportsApp.jsx";
 
 const rootElement = document.getElementById("sandbox-root");
 if (rootElement) {
   createRoot(rootElement).render(
     <StrictMode>
-      <SandboxApp />
+      <NeitImportsApp />
     </StrictMode>
   );
 }

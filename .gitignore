@@ -1,1 +1,28 @@
+# Variáveis de Ambiente e Credenciais
 .env
+.env.local
+.env.*.local
+
+# Banco de Dados Local (SQLite)
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Python & Ambientes Virtuais
+__pycache__/
+*.py[cod]
+.venv/
+env/
+venv/
+
+# Node & Frontend Build
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Logs e IDE
+*.log
+.vscode/
+.idea/
