@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { TrendingUp, Award, MapPin, Tag, ArrowRight, DollarSign, Layers } from "lucide-react";
+import { TrendingUp, Award, MapPin, Tag, Layers } from "lucide-react";
 
 export default function MiniDashboard({
   obras = [],

@@ -1,36 +1,6 @@
 import React, { useRef } from "react";
 import { Search, X, SlidersHorizontal, RotateCcw } from "lucide-react";
-
-export const ESTADOS_BRASIL = [
-  { sigla: "TODOS", nome: "Todos os Estados (UF)" },
-  { sigla: "AC", nome: "Acre (AC)" },
-  { sigla: "AL", nome: "Alagoas (AL)" },
-  { sigla: "AP", nome: "Amapá (AP)" },
-  { sigla: "AM", nome: "Amazonas (AM)" },
-  { sigla: "BA", nome: "Bahia (BA)" },
-  { sigla: "CE", nome: "Ceará (CE)" },
-  { sigla: "DF", nome: "Distrito Federal (DF)" },
-  { sigla: "ES", nome: "Espírito Santo (ES)" },
-  { sigla: "GO", nome: "Goiás (GO)" },
-  { sigla: "MA", nome: "Maranhão (MA)" },
-  { sigla: "MT", nome: "Mato Grosso (MT)" },
-  { sigla: "MS", nome: "Mato Grosso do Sul (MS)" },
-  { sigla: "MG", nome: "Minas Gerais (MG)" },
-  { sigla: "PA", nome: "Pará (PA)" },
-  { sigla: "PB", nome: "Paraíba (PB)" },
-  { sigla: "PR", nome: "Paraná (PR)" },
-  { sigla: "PE", nome: "Pernambuco (PE)" },
-  { sigla: "PI", nome: "Piauí (PI)" },
-  { sigla: "RJ", nome: "Rio de Janeiro (RJ)" },
-  { sigla: "RN", nome: "Rio Grande do Norte (RN)" },
-  { sigla: "RS", nome: "Rio Grande do Sul (RS)" },
-  { sigla: "RO", nome: "Rondônia (RO)" },
-  { sigla: "RR", nome: "Roraima (RR)" },
-  { sigla: "SC", nome: "Santa Catarina (SC)" },
-  { sigla: "SP", nome: "São Paulo (SP)" },
-  { sigla: "SE", nome: "Sergipe (SE)" },
-  { sigla: "TO", nome: "Tocantins (TO)" },
-];
+import { ESTADOS_BRASIL } from "../constants/estados";
 
 export default function FilterPanel({
   inicialDate,
@@ -170,9 +140,10 @@ export default function FilterPanel({
             onChange={(e) => setModalidade(Number(e.target.value))}
             className="theme-input w-full border rounded-xl px-3.5 py-2.5 min-h-11 text-sm focus-visible:outline-2 focus-visible:outline-amber-400 focus-visible:outline-offset-2 transition cursor-pointer"
           >
-            <option value={0}>Todas (Concorrência + Pregão)</option>
+            <option value={0}>Todas (Concorrência + Pregão + Dispensa)</option>
             <option value={4}>Concorrência Eletrônica (4)</option>
             <option value={6}>Pregão Eletrônico (6)</option>
+            <option value={8}>Dispensa (8)</option>
           </select>
         </div>
 
@@ -197,6 +168,10 @@ export default function FilterPanel({
           </select>
         </div>
       </div>
+
+      <p id="filtro-data-hoje-ajuda" className="text-xs" style={{ color: "var(--text-muted)" }}>
+        Escolha o período de publicação que deseja consultar. O padrão inicial é o dia atual.
+      </p>
 
       {/* SEÇÃO 2: CAIXA DE PESQUISA EM TEMPO REAL */}
       <div className="pt-2 border-t" style={{ borderColor: "var(--border-subtle)" }}>

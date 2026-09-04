@@ -1,0 +1,18 @@
+[
+  {
+    "descricao": "Reforma de ala hospitalar do Hospital Municipal",
+    "esperado": "aprovado"
+  },
+  {
+    "descricao": "Aquisição de cabo elétrico para manutenção predial",
+    "esperado": "rejeitado"
+  },
+  {
+    "descricao": "Construção de UBS com instalação elétrica completa",
+    "esperado": "aprovado"
+  },
+  {
+    "descricao": "Contratação de consultoria em engenharia de obras",
+    "esperado": "revisao_pendente"
+  }
+]

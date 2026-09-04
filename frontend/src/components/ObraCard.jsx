@@ -1,8 +1,8 @@
 import React from "react";
-import { MapPin, ExternalLink, Calendar, Tag, ChevronRight } from "lucide-react";
+import { MapPin, ExternalLink, Calendar, Tag } from "lucide-react";
 
-export default function ObraCard({ obra, onSelect }) {
-  const cardId = obra.id_pncp || obra.numero_controle_pncp || Math.random().toString(36).substring(2, 9);
+export default function ObraCard({ obra, analiseExigencias, onSelect, itemKey = "obra-sem-id" }) {
+  const cardId = obra.id_pncp || obra.numero_controle_pncp || itemKey;
 
   const formatDate = (dateStr) => {
     if (!dateStr) return "Não informada";
@@ -19,31 +19,15 @@ export default function ObraCard({ obra, onSelect }) {
     }
   };
 
-  const valorFormatado = obra.valor_estimado
-    ? `R$ ${obra.valor_estimado.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  const valorNumerico = Number(obra.valor_estimado);
+  const valorFormatado = Number.isFinite(valorNumerico)
+    ? `R$ ${valorNumerico.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     : "Não informado";
-
-  const handleCardClick = () => {
-    onSelect?.(obra);
-  };
-
-  const handleKeyDown = (e) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      onSelect?.(obra);
-    }
-  };
 
   return (
     <article
-      role="button"
-      tabIndex={0}
-      onClick={handleCardClick}
-      onKeyDown={handleKeyDown}
       aria-labelledby={`obra-title-${cardId}`}
-      aria-haspopup="dialog"
-      title="Clique para ver os detalhes completos da obra"
-      className="theme-card theme-card-hover border rounded-2xl p-5 flex flex-col justify-between transition-all duration-200 group cursor-pointer focus-visible:outline-2 focus-visible:outline-amber-400 focus-visible:outline-offset-2 select-none"
+      className="theme-card theme-card-hover border rounded-2xl p-5 flex flex-col justify-between transition-all duration-200 group"
     >
       <div className="space-y-3">
         {/* Badge de Localização + Modalidade */}
@@ -103,6 +87,28 @@ export default function ObraCard({ obra, onSelect }) {
         <p className="text-xs line-clamp-3 leading-relaxed" style={{ color: "var(--text-muted)" }}>
           {obra.objeto}
         </p>
+
+        <div
+          className="rounded-xl border px-3 py-2 text-xs leading-relaxed"
+          style={{ backgroundColor: "var(--card-bg)", borderColor: "var(--border-subtle)", color: "var(--text-muted)" }}
+          aria-label="Resumo de exigências identificadas no edital"
+        >
+          <span className="block text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--text-dim)" }}>
+            Exigências do edital
+          </span>
+          {!analiseExigencias && <span>Ainda não analisado — a análise começa ao abrir os detalhes.</span>}
+          {analiseExigencias?.status === "sucesso" && (
+            <span>
+              {analiseExigencias.total_exigencias} {analiseExigencias.total_exigencias === 1 ? "item identificado" : "itens identificados"}
+              {Object.keys(analiseExigencias.categorias || {}).length > 0
+                ? ` · ${Object.keys(analiseExigencias.categorias).length} categorias`
+                : ""}
+            </span>
+          )}
+          {analiseExigencias?.status === "sucesso_parcial" && <span>Análise parcial — confira as fontes no detalhe.</span>}
+          {analiseExigencias?.status === "sem_documento_analisavel" && <span>Não há documento analisável disponível.</span>}
+          {analiseExigencias?.status === "erro" && <span>Não foi possível analisar os anexos.</span>}
+        </div>
       </div>
 
       {/* FOOTER DO CARD */}
@@ -123,13 +129,25 @@ export default function ObraCard({ obra, onSelect }) {
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => onSelect?.(obra)}
+            aria-label={`Ver detalhes de ${obra.orgao || "órgão público"}`}
+            className="inline-flex items-center justify-center px-3.5 py-2 min-h-10 rounded-xl font-bold transition duration-150 border focus-visible:outline-2 focus-visible:outline-amber-400 focus-visible:outline-offset-2 cursor-pointer shadow-sm text-xs hover:border-amber-500"
+            style={{
+              backgroundColor: "var(--btn-action-bg)",
+              borderColor: "var(--btn-action-border)",
+              color: "var(--btn-action-text)",
+            }}
+          >
+            Ver detalhes
+          </button>
           {obra.link_pncp && (
             <a
               href={obra.link_pncp}
               target="_blank"
               rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              aria-label={`Ver detalhes da licitação de ${obra.orgao || 'órgão'} no portal PNCP (abre em nova aba)`}
+              aria-label={`Ver detalhes da licitação de ${obra.orgao || "órgão"} no portal PNCP (abre em nova aba)`}
               className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 min-h-10 rounded-xl font-bold transition duration-150 border focus-visible:outline-2 focus-visible:outline-amber-400 focus-visible:outline-offset-2 cursor-pointer shadow-sm text-xs hover:border-amber-500"
               style={{
                 backgroundColor: "var(--btn-pncp-bg)",

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Header from "./components/Header";
 import FilterPanel from "./components/FilterPanel";
 import StatusBar from "./components/StatusBar";
@@ -6,6 +6,8 @@ import MiniDashboard from "./components/MiniDashboard";
 import ObrasList from "./components/ObrasList";
 import ObraDetailModal from "./components/ObraDetailModal";
 import AccessibilityFooter from "./components/AccessibilityFooter";
+import StatusBanner from "./components/StatusBanner";
+import { buscarObras, cancelarBuscaAtual } from "./api";
 
 // Retorna a data no formato YYYY-MM-DD com deslocamento de dias
 const getFormattedDate = (offsetDays = 0) => {
@@ -17,17 +19,19 @@ const getFormattedDate = (offsetDays = 0) => {
   return `${year}-${month}-${day}`;
 };
 
-const DEFAULT_INITIAL_DATE = getFormattedDate(-2);
-const DEFAULT_FINAL_DATE = getFormattedDate(0);
 const DEFAULT_UF = "TODOS";
 const DEFAULT_MODALIDADE = 0;
 const DEFAULT_SORT_BY = "data_desc";
+const TARGETED_MAX_PAGES = 5;
 
 export default function App() {
   const [obras, setObras] = useState([]);
   const [loading, setLoading] = useState(false);
   const [statusInfo, setStatusInfo] = useState(null);
+  const [apiPagination, setApiPagination] = useState(null);
+  const [pageNavigation, setPageNavigation] = useState({ cursor: null, history: [], page: 1 });
   const [selectedObra, setSelectedObra] = useState(null);
+  const [analisesExigencias, setAnalisesExigencias] = useState({});
   const [showDashboard, setShowDashboard] = useState(false);
 
   // Controle de Tema: 'dark' (Deep Midnight Navy) ou 'light' (Light Pro) com persistência local
@@ -49,20 +53,22 @@ export default function App() {
     });
   }, []);
 
-  // Filtros de Requisição da API e Frontend
-  const [inicialDate, setInicialDate] = useState(() => DEFAULT_INITIAL_DATE);
-  const [finalDate, setFinalDate] = useState(() => DEFAULT_FINAL_DATE);
+  // Filtros da consulta remota; termo e ordenação continuam locais.
+  const [inicialDate, setInicialDate] = useState(() => getFormattedDate(0));
+  const [finalDate, setFinalDate] = useState(() => getFormattedDate(0));
   const [ufFilter, setUfFilter] = useState(DEFAULT_UF);
   const [modalidade, setModalidade] = useState(DEFAULT_MODALIDADE);
   const [sortBy, setSortBy] = useState(DEFAULT_SORT_BY);
 
   // Filtro de Pesquisa em Tempo Real no Frontend
   const [searchTerm, setSearchTerm] = useState("");
+  const requestIdRef = useRef(0);
 
   // Formata data YYYY-MM-DD para YYYYMMDD exigido pela API
   const formatDateForApi = (dateStr) => (dateStr ? dateStr.replaceAll("-", "") : "");
 
-  const fetchObras = useCallback(async (customSignal) => {
+  const fetchObras = useCallback(async ({ cursor = null, history = [], page = 1 } = {}) => {
+    const requestId = ++requestIdRef.current;
     const pInicial = formatDateForApi(inicialDate);
     const pFinal = formatDateForApi(finalDate);
 
@@ -84,36 +90,47 @@ export default function App() {
       return;
     }
 
-    setLoading(true);
-
-    const timeoutController = new AbortController();
-    const timeoutId = setTimeout(() => timeoutController.abort(), 18000);
-
-    const onCustomAbort = () => timeoutController.abort();
-    if (customSignal instanceof AbortSignal) {
-      if (customSignal.aborted) {
-        clearTimeout(timeoutId);
-        setLoading(false);
-        return;
-      }
-      customSignal.addEventListener("abort", onCustomAbort);
-    }
+      setLoading(true);
 
     try {
-      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000/api/v1/obras";
-      const url = `${apiBaseUrl}?inicial_date=${pInicial}&final_date=${pFinal}&modalidade=${modalidade}`;
+      const remoteParams = {
+        inicial_date: pInicial,
+        final_date: pFinal,
+        modalidade,
+        max_paginas: modalidade === DEFAULT_MODALIDADE ? 1 : TARGETED_MAX_PAGES,
+        tamanho_resultado: 15,
+      };
+      if (cursor) {
+        remoteParams.cursor = cursor;
+      }
+      if (ufFilter !== DEFAULT_UF) {
+        remoteParams.uf = ufFilter;
+      }
 
-      const res = await fetch(url, { signal: timeoutController.signal });
-      const data = await res.json();
+      const data = await buscarObras({
+        ...remoteParams,
+      });
 
-      setObras(data.dados || []);
+      if (requestId !== requestIdRef.current) return;
+
+      setObras(Array.isArray(data.dados) ? data.dados : []);
+      const pagination = data.paginacao || {};
+      setApiPagination({
+        proximoCursor: pagination.proximo_cursor || null,
+        temMais: Boolean(pagination.tem_mais),
+        totalCarregado: Number(pagination.total_carregado ?? data.total_encontradas ?? data.dados?.length ?? 0),
+        page,
+        hasPrevious: history.length > 0,
+      });
+      setPageNavigation({ cursor, history, page });
       setStatusInfo({
         status: data.status,
         mensagem: data.mensagem,
         total: data.total_encontradas,
+        metadados: data.metadados,
       });
     } catch (err) {
-      if (customSignal?.aborted) {
+      if (err.name === "AbortError" || requestId !== requestIdRef.current) {
         return;
       }
       console.error("Erro ao conectar no backend:", err);
@@ -126,22 +143,38 @@ export default function App() {
         total: 0,
       });
     } finally {
-      clearTimeout(timeoutId);
-      if (customSignal instanceof AbortSignal) {
-        customSignal.removeEventListener("abort", onCustomAbort);
+      if (requestId === requestIdRef.current) {
+        setLoading(false);
       }
-      setLoading(false);
     }
-  }, [inicialDate, finalDate, modalidade]);
+  }, [inicialDate, finalDate, modalidade, ufFilter]);
+
+  const handleLoadNextPage = useCallback((nextCursor) => {
+    if (!nextCursor) return;
+    fetchObras({
+      cursor: nextCursor,
+      history: [...pageNavigation.history, pageNavigation.cursor],
+      page: pageNavigation.page + 1,
+    });
+  }, [fetchObras, pageNavigation]);
+
+  const handleLoadPreviousPage = useCallback(() => {
+    if (!pageNavigation.history.length) return;
+    const previousCursor = pageNavigation.history[pageNavigation.history.length - 1];
+    fetchObras({
+      cursor: previousCursor,
+      history: pageNavigation.history.slice(0, -1),
+      page: pageNavigation.page - 1,
+    });
+  }, [fetchObras, pageNavigation]);
 
   useEffect(() => {
-    const controller = new AbortController();
     const timer = setTimeout(() => {
-      fetchObras(controller.signal);
+      fetchObras();
     }, 400);
     return () => {
       clearTimeout(timer);
-      controller.abort();
+      cancelarBuscaAtual();
     };
   }, [fetchObras]);
 
@@ -175,6 +208,20 @@ export default function App() {
       result = result.filter((obra) => {
         const uf = (obra.uf || "").toUpperCase().trim();
         return uf === ufFilter.toUpperCase().trim();
+      });
+    }
+
+    // Modalidade também é filtrada localmente para evitar uma nova consulta ao PNCP.
+    if (modalidade !== DEFAULT_MODALIDADE) {
+      result = result.filter((obra) => {
+        const codigo = Number(obra.modalidade_codigo);
+        if (Number.isFinite(codigo)) return codigo === modalidade;
+
+        const nome = (obra.modalidade || "").toLowerCase();
+        if (modalidade === 4) return nome.includes("concorrência") || nome.includes("concorrencia");
+        if (modalidade === 6) return nome.includes("pregão") || nome.includes("pregao");
+        if (modalidade === 8) return nome.includes("dispensa");
+        return true;
       });
     }
 
@@ -219,7 +266,7 @@ export default function App() {
       // Padrão: data_desc (mais recente primeiro)
       return new Date(b.data_publicacao || 0) - new Date(a.data_publicacao || 0);
     });
-  }, [obras, ufFilter, searchTerm, sortBy]);
+  }, [obras, ufFilter, modalidade, searchTerm, sortBy]);
 
   // Volume total estimado somado de todas as obras filtradas
   const volumeTotal = useMemo(() => {
@@ -229,24 +276,31 @@ export default function App() {
   // Contagem de filtros ativos desviando do padrão
   const activeFiltersCount = useMemo(() => {
     let count = 0;
-    if (inicialDate !== DEFAULT_INITIAL_DATE) count++;
-    if (finalDate !== DEFAULT_FINAL_DATE) count++;
+    const hoje = getFormattedDate(0);
+    if (inicialDate !== hoje) count++;
+    if (finalDate !== hoje) count++;
     if (ufFilter !== DEFAULT_UF) count++;
     if (modalidade !== DEFAULT_MODALIDADE) count++;
-    if (sortBy !== DEFAULT_SORT_BY) count++;
     if (searchTerm.trim() !== "") count++;
     return count;
-  }, [inicialDate, finalDate, ufFilter, modalidade, sortBy, searchTerm]);
+  }, [inicialDate, finalDate, ufFilter, modalidade, searchTerm]);
 
   // Restaura todos os filtros para os valores padrão
   const handleResetFilters = useCallback(() => {
-    setInicialDate(DEFAULT_INITIAL_DATE);
-    setFinalDate(DEFAULT_FINAL_DATE);
+    const hoje = getFormattedDate(0);
+    setInicialDate(hoje);
+    setFinalDate(hoje);
     setUfFilter(DEFAULT_UF);
     setModalidade(DEFAULT_MODALIDADE);
     setSortBy(DEFAULT_SORT_BY);
     setSearchTerm("");
   }, []);
+
+  const handleAnalysisComplete = useCallback((analysis) => {
+    if (!selectedObra) return;
+    const key = selectedObra.id_pncp || `${selectedObra.cnpj}:${selectedObra.ano}:${selectedObra.sequencial}`;
+    setAnalisesExigencias((current) => ({ ...current, [key]: analysis }));
+  }, [selectedObra]);
 
   return (
     <div className={`min-h-screen app-bg theme-${theme} font-sans p-4 sm:p-6 lg:p-8 selection:bg-amber-500 selection:text-slate-950 transition-colors duration-200`}>
@@ -284,6 +338,8 @@ export default function App() {
             onResetFilters={handleResetFilters}
           />
 
+          <StatusBanner statusInfo={statusInfo} />
+
           <StatusBar
             statusInfo={statusInfo}
             filteredTotal={filteredObras.length}
@@ -295,7 +351,7 @@ export default function App() {
           {/* Mini Dashboard Expansível de Estatísticas e Análise */}
           {showDashboard && (
             <MiniDashboard
-              obras={obras}
+              obras={filteredObras}
               onSelectUf={setUfFilter}
               onSelectModalidade={setModalidade}
               activeUf={ufFilter}
@@ -304,11 +360,16 @@ export default function App() {
           )}
 
           <ObrasList
+            key={`${inicialDate}:${finalDate}:${ufFilter}:${modalidade}:${sortBy}:${searchTerm}`}
             obras={filteredObras}
             loading={loading}
             searchTerm={searchTerm}
             onClearSearch={() => setSearchTerm("")}
             onSelectObra={setSelectedObra}
+            analisesExigencias={analisesExigencias}
+            apiPagination={apiPagination}
+            onLoadNextPage={handleLoadNextPage}
+            onLoadPreviousPage={handleLoadPreviousPage}
           />
         </main>
 
@@ -316,6 +377,7 @@ export default function App() {
         <ObraDetailModal
           obra={selectedObra}
           onClose={() => setSelectedObra(null)}
+          onAnalysisComplete={handleAnalysisComplete}
         />
 
         <AccessibilityFooter />

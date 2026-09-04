@@ -1,30 +1,65 @@
 import React, { useEffect, useRef } from "react";
-import { X, ExternalLink, MapPin, Tag, Calendar, FileText, Building, DollarSign } from "lucide-react";
+import {
+  X,
+  ExternalLink,
+  MapPin,
+  Tag,
+  Calendar,
+  FileText,
+  DollarSign,
+} from "lucide-react";
+import { DocumentosSection, ExigenciasSection } from "./ObraDocumentAnalysisSections";
 
-export default function ObraDetailModal({ obra, onClose }) {
+export default function ObraDetailModal({ obra, onClose, onAnalysisComplete }) {
   const modalRef = useRef(null);
+  const previouslyFocused = useRef(null);
 
-  // Fechar com a tecla Escape e gerenciar scroll do body
+  // Gerenciar foco, Escape e scroll do body enquanto o modal está aberto.
   useEffect(() => {
     if (!obra) return;
 
-    const handleKeyDown = (e) => {
-      if (e.key === "Escape") {
-        onClose();
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    // Prevenir rolagem do fundo enquanto o modal está aberto
+    previouslyFocused.current = document.activeElement;
+    const firstFocusable = modalRef.current?.querySelector(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+    );
+    (firstFocusable || modalRef.current)?.focus();
     document.body.style.overflow = "hidden";
 
     return () => {
-      window.removeEventListener("keydown", handleKeyDown);
       document.body.style.overflow = "unset";
+      previouslyFocused.current?.focus?.();
     };
-  }, [obra, onClose]);
+  }, [obra]);
 
   if (!obra) return null;
+
+  const handleModalKeyDown = (event) => {
+    if (event.key === "Escape") {
+      onClose();
+      return;
+    }
+    if (event.key !== "Tab") return;
+
+    const focusables = Array.from(
+      modalRef.current?.querySelectorAll(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ) || [],
+    );
+    if (!focusables.length) {
+      event.preventDefault();
+      modalRef.current?.focus();
+      return;
+    }
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
 
   const formatDate = (dateStr) => {
     if (!dateStr) return "Não informada";
@@ -41,12 +76,13 @@ export default function ObraDetailModal({ obra, onClose }) {
     }
   };
 
-  const valorFormatado = obra.valor_estimado
-    ? `R$ ${obra.valor_estimado.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  const valorNumerico = Number(obra.valor_estimado);
+  const valorFormatado = Number.isFinite(valorNumerico)
+    ? `R$ ${valorNumerico.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     : "Valor não informado";
 
   const idPncp = obra.id_pncp || obra.numero_controle_pncp || "Não informado";
-
+  const obraRequestKey = obra.id_pncp || obra.numero_controle_pncp || `${obra.cnpj}:${obra.ano}:${obra.sequencial}`;
   return (
     <div
       role="dialog"
@@ -64,6 +100,8 @@ export default function ObraDetailModal({ obra, onClose }) {
       {/* Container do Modal */}
       <div
         ref={modalRef}
+        tabIndex={-1}
+        onKeyDown={handleModalKeyDown}
         className="theme-card relative w-full max-w-2xl border rounded-2xl p-6 sm:p-7 shadow-2xl z-10 space-y-5 my-8 max-h-[90vh] flex flex-col justify-between animate-in fade-in zoom-in-95 duration-200"
       >
         {/* CABEÇALHO DO MODAL */}
@@ -202,6 +240,13 @@ export default function ObraDetailModal({ obra, onClose }) {
               {obra.objeto || "Descrição do objeto não informada no edital."}
             </div>
           </div>
+
+          <ExigenciasSection
+            key={`exigencias:${obraRequestKey}`}
+            obra={obra}
+            onAnalysisComplete={onAnalysisComplete}
+          />
+          <DocumentosSection key={`documentos:${obraRequestKey}`} obra={obra} />
         </div>
 
         {/* FOOTER DO MODAL */}

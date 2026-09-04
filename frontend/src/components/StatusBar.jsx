@@ -10,7 +10,7 @@ export default function StatusBar({
 }) {
   if (!statusInfo && typeof volumeTotal !== "number") return null;
 
-  const totalObras = statusInfo?.total || filteredTotal || 0;
+  const totalObras = statusInfo?.total ?? filteredTotal ?? 0;
   const hasFilter = filteredTotal !== undefined && filteredTotal !== totalObras;
 
   // Formata o volume total para moeda brasileira R$ 000.000.000,00
