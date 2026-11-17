@@ -34,6 +34,20 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def datas_proposta(payload: Any) -> dict[str, str | None]:
+    """Janela de recebimento de propostas, como o PNCP publica (hora de Brasília, sem fuso).
+
+    Vem do payload original para valer também em registros já salvos, sem migração.
+    """
+    payload = payload if isinstance(payload, dict) else {}
+    return {
+        "data_abertura_proposta": payload.get("dataAberturaProposta") or payload.get("data_abertura_proposta") or None,
+        "data_encerramento_proposta": payload.get("dataEncerramentoProposta")
+        or payload.get("data_encerramento_proposta")
+        or None,
+    }
+
+
 class ObraModel(Base):
     __tablename__ = "obras"
 
@@ -77,6 +91,7 @@ class ObraModel(Base):
             "objeto": self.objeto,
             "valor_estimado": self.valor_estimado,
             "data_publicacao": self.data_publicacao.isoformat() if self.data_publicacao else None,
+            **datas_proposta(self.payload_original),
             "modalidade": self.modalidade,
             "modalidade_codigo": self.modalidade_codigo,
             "criterio_julgamento": self.criterio_julgamento,

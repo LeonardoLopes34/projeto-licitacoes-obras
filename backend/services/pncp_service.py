@@ -34,7 +34,7 @@ from backend.services.query_snapshot_repository import (
     obter_snapshot_consulta,
     salvar_snapshot_consulta,
 )
-from backend.models.obra_model import validar_modalidade
+from backend.models.obra_model import datas_proposta, validar_modalidade
 from backend.schemas import DocumentoOut, ExecucaoBusca, PaginacaoOut, ResultadoBusca, ResultadoDocumentos
 from backend.services.circuit_breaker import CircuitBreaker
 from backend.services.search_filter_service import (
@@ -521,6 +521,7 @@ def processar_itens_raw(
                 "objeto": objeto,
                 "valor_estimado": item.get("valorTotalEstimado") or item.get("valor_estimado"),
                 "data_publicacao": publicacao,
+                **datas_proposta(item),
                 **campos_tipo,
                 "itens": item.get("itens") or item.get("itensCompra") or item.get("items") or item.get("descricaoItens"),
                 "documentos": item.get("documentos") or item.get("documents"),

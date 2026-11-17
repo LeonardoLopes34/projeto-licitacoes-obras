@@ -100,6 +100,9 @@ class ObraOut(BaseModel):
     objeto: str
     valor_estimado: Decimal | None = None
     data_publicacao: str
+    # Recebimento de propostas, como o PNCP publica: "2026-11-20T08:00:00", hora de Brasília.
+    data_abertura_proposta: str | None = None
+    data_encerramento_proposta: str | None = None
     modalidade: str | None = None
     modalidade_codigo: int | None = None
     criterio_julgamento: str | None = None
