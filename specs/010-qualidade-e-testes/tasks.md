@@ -1,0 +1,15 @@
+# Tasks — Spec 010: Suíte de Testes, Lint e Documentação
+
+- [ ] Criar estrutura `backend/tests/{unit,integration,fixtures}` (R010-1)
+- [ ] Escrever `test_paginacao.py` cobrindo Spec 002 (R010-1)
+- [ ] Escrever `test_filtro_obras.py` cobrindo Spec 008, reaproveitando `casos_filtro.json` (R010-1)
+- [ ] Escrever `test_modelo_dados.py` cobrindo Spec 007 (modalidade, Numeric, CNPJ) (R010-1)
+- [ ] Escrever `test_endpoints_obras.py` cobrindo Spec 003 (metadados de resposta) (R010-1)
+- [ ] Escrever `test_endpoints_admin.py` cobrindo Spec 004 (autenticação admin) (R010-1)
+- [ ] Configurar `respx`/`responses` para mockar chamadas HTTP ao PNCP em testes (R010-1)
+- [ ] Rodar `ruff`/`flake8` no backend e corrigir todos os apontamentos (R010-2)
+- [ ] Rodar `npm run lint` no frontend e corrigir os 7 warnings existentes (R010-2)
+- [ ] Rodar `git diff --check` e remover espaços em branco no final de linha em todo o repositório (R010-3)
+- [ ] Reescrever `README.md` com as seções: visão geral, arquitetura, instalação, variáveis de ambiente, como rodar, como testar, limitações conhecidas (R010-4)
+- [ ] Configurar pipeline de CI (GitHub Actions ou equivalente) rodando pytest, ruff, npm lint, npm build e git diff --check em todo PR (R010-1, R010-2, R010-3)
+- [ ] Validar README com um desenvolvedor que não conhece o projeto, seguindo apenas o documento do zero (R010-4)

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Header from "./components/Header";
 import FilterPanel from "./components/FilterPanel";
 import StatusBar from "./components/StatusBar";
@@ -6,6 +6,15 @@ import MiniDashboard from "./components/MiniDashboard";
 import ObrasList from "./components/ObrasList";
 import ObraDetailModal from "./components/ObraDetailModal";
 import AccessibilityFooter from "./components/AccessibilityFooter";
+import StatusBanner from "./components/StatusBanner";
+import { buscarObrasProgressivamente, cancelarBuscaAtual } from "./api";
+import {
+  DEFAULT_SEARCH_SCOPE,
+  evaluateSearch,
+  normalizeSearchText,
+  parseSearchExpression,
+  removeSearchTerm,
+} from "./searchExpression";
 
 // Retorna a data no formato YYYY-MM-DD com deslocamento de dias
 const getFormattedDate = (offsetDays = 0) => {
@@ -17,17 +26,23 @@ const getFormattedDate = (offsetDays = 0) => {
   return `${year}-${month}-${day}`;
 };
 
-const DEFAULT_INITIAL_DATE = getFormattedDate(-2);
-const DEFAULT_FINAL_DATE = getFormattedDate(0);
 const DEFAULT_UF = "TODOS";
 const DEFAULT_MODALIDADE = 0;
 const DEFAULT_SORT_BY = "data_desc";
+const PROGRESSIVE_MAX_PAGES = 5;
+
+const normalizeText = normalizeSearchText;
+
+const isPavementWork = (obra) =>
+  /paviment|recape|calcamento|asfalt|pavimento/.test(normalizeText(obra.objeto));
 
 export default function App() {
   const [obras, setObras] = useState([]);
   const [loading, setLoading] = useState(false);
   const [statusInfo, setStatusInfo] = useState(null);
+  const [apiPagination, setApiPagination] = useState(null);
   const [selectedObra, setSelectedObra] = useState(null);
+  const [analisesExigencias, setAnalisesExigencias] = useState({});
   const [showDashboard, setShowDashboard] = useState(false);
 
   // Controle de Tema: 'dark' (Deep Midnight Navy) ou 'light' (Light Pro) com persistência local
@@ -49,20 +64,25 @@ export default function App() {
     });
   }, []);
 
-  // Filtros de Requisição da API e Frontend
-  const [inicialDate, setInicialDate] = useState(() => DEFAULT_INITIAL_DATE);
-  const [finalDate, setFinalDate] = useState(() => DEFAULT_FINAL_DATE);
+  // Os filtros são aplicados ao último snapshot carregado. Só uma mudança de
+  // período ou o botão Atualizar Dados pode iniciar uma coleta no PNCP.
+  const [inicialDate, setInicialDate] = useState(() => getFormattedDate(0));
+  const [finalDate, setFinalDate] = useState(() => getFormattedDate(0));
   const [ufFilter, setUfFilter] = useState(DEFAULT_UF);
   const [modalidade, setModalidade] = useState(DEFAULT_MODALIDADE);
   const [sortBy, setSortBy] = useState(DEFAULT_SORT_BY);
+  const [incluirPavimentacao, setIncluirPavimentacao] = useState(true);
 
   // Filtro de Pesquisa em Tempo Real no Frontend
   const [searchTerm, setSearchTerm] = useState("");
+  const [escopoBusca, setEscopoBusca] = useState(DEFAULT_SEARCH_SCOPE);
+  const requestIdRef = useRef(0);
 
   // Formata data YYYY-MM-DD para YYYYMMDD exigido pela API
   const formatDateForApi = (dateStr) => (dateStr ? dateStr.replaceAll("-", "") : "");
 
-  const fetchObras = useCallback(async (customSignal) => {
+  const fetchObras = useCallback(async ({ forcarAtualizacao = false } = {}) => {
+    const requestId = ++requestIdRef.current;
     const pInicial = formatDateForApi(inicialDate);
     const pFinal = formatDateForApi(finalDate);
 
@@ -85,63 +105,78 @@ export default function App() {
     }
 
     setLoading(true);
-
-    const timeoutController = new AbortController();
-    const timeoutId = setTimeout(() => timeoutController.abort(), 18000);
-
-    const onCustomAbort = () => timeoutController.abort();
-    if (customSignal instanceof AbortSignal) {
-      if (customSignal.aborted) {
-        clearTimeout(timeoutId);
-        setLoading(false);
-        return;
-      }
-      customSignal.addEventListener("abort", onCustomAbort);
-    }
+    setObras([]);
+    setApiPagination(null);
 
     try {
-      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000/api/v1/obras";
-      const url = `${apiBaseUrl}?inicial_date=${pInicial}&final_date=${pFinal}&modalidade=${modalidade}`;
+      const remoteParams = {
+        inicial_date: pInicial,
+        final_date: pFinal,
+        // Traz o conjunto-base do período. As mudanças de UF, modalidade,
+        // termo, ordenação e pavimentação são locais e não voltam ao PNCP.
+        modalidade: DEFAULT_MODALIDADE,
+        // Os cards chegam página a página. Assim, a tela começa a preencher
+        // imediatamente e continua coletando resultados para evitar cortes na
+        // primeira página do PNCP.
+        max_paginas: PROGRESSIVE_MAX_PAGES,
+        incluir_pavimentacao: true,
+      };
+      if (forcarAtualizacao) remoteParams.forcar_atualizacao = true;
 
-      const res = await fetch(url, { signal: timeoutController.signal });
-      const data = await res.json();
+      const aplicarResultadoConcluido = (data) => {
+        if (requestId !== requestIdRef.current) return;
+        setObras(Array.isArray(data.dados) ? data.dados : []);
+        setApiPagination(null);
+        setStatusInfo({
+          status: data.status,
+          mensagem: data.mensagem,
+          total: data.total_encontradas,
+          metadados: data.metadados,
+        });
+      };
 
-      setObras(data.dados || []);
-      setStatusInfo({
-        status: data.status,
-        mensagem: data.mensagem,
-        total: data.total_encontradas,
+      await buscarObrasProgressivamente(remoteParams, {
+        onProgress: (data) => {
+          if (requestId !== requestIdRef.current) return;
+          setObras(Array.isArray(data.dados) ? data.dados : []);
+          setStatusInfo({
+            status: data.status,
+            mensagem: data.mensagem,
+            total: data.total_encontradas,
+            metadados: data.metadados,
+          });
+        },
+        onComplete: aplicarResultadoConcluido,
       });
     } catch (err) {
-      if (customSignal?.aborted) {
+      if (err.name === "AbortError" || requestId !== requestIdRef.current) {
         return;
       }
       console.error("Erro ao conectar no backend:", err);
       setStatusInfo({
         status: "erro",
         mensagem:
-          err.name === "AbortError"
+          err.status === 410 || err.code === "consulta_expirada"
+            ? "A consulta expirou. Atualize para reiniciar mantendo os filtros selecionados."
+            : err.name === "AbortError"
             ? "Tempo limite esgotado (Timeout). O servidor do PNCP demorou muito para responder."
             : "Erro ao conectar com a API FastAPI. Verifique se o backend está rodando.",
         total: 0,
       });
     } finally {
-      clearTimeout(timeoutId);
-      if (customSignal instanceof AbortSignal) {
-        customSignal.removeEventListener("abort", onCustomAbort);
+      if (requestId === requestIdRef.current) {
+        setLoading(false);
       }
-      setLoading(false);
     }
-  }, [inicialDate, finalDate, modalidade]);
+  }, [inicialDate, finalDate]);
 
   useEffect(() => {
-    const controller = new AbortController();
     const timer = setTimeout(() => {
-      fetchObras(controller.signal);
+      fetchObras();
     }, 400);
     return () => {
       clearTimeout(timer);
-      controller.abort();
+      cancelarBuscaAtual();
     };
   }, [fetchObras]);
 
@@ -166,87 +201,96 @@ export default function App() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  // Filtra e ordena as obras retornadas em tempo real com useMemo para máxima performance
-  const filteredObras = useMemo(() => {
+  const obrasAposFiltrosEstruturais = useMemo(() => {
     let result = obras;
 
-    // Filtro por Estado (UF) em tempo real no frontend
-    if (ufFilter && ufFilter !== "TODOS") {
-      result = result.filter((obra) => {
-        const uf = (obra.uf || "").toUpperCase().trim();
-        return uf === ufFilter.toUpperCase().trim();
-      });
+    if (ufFilter !== DEFAULT_UF) {
+      result = result.filter((obra) => normalizeText(obra.uf) === normalizeText(ufFilter));
     }
-
-    // Filtro por termo de pesquisa
-    if (searchTerm.trim()) {
-      const term = searchTerm.toLowerCase();
-      result = result.filter((obra) => {
-        const municipio = (obra.municipio || "").toLowerCase();
-        const uf = (obra.uf || "").toLowerCase();
-        const orgao = (obra.orgao || "").toLowerCase();
-        const objeto = (obra.objeto || "").toLowerCase();
-        const modalidadeNome = (obra.modalidade || "").toLowerCase();
-        const fonte = (obra.fonte || "").toLowerCase();
-        const dataPub = (obra.data_publicacao || "").toLowerCase();
-
-        return (
-          municipio.includes(term) ||
-          uf.includes(term) ||
-          orgao.includes(term) ||
-          objeto.includes(term) ||
-          modalidadeNome.includes(term) ||
-          fonte.includes(term) ||
-          dataPub.includes(term)
-        );
-      });
+    if (modalidade !== DEFAULT_MODALIDADE) {
+      result = result.filter((obra) => Number(obra.modalidade_codigo) === modalidade);
     }
+    if (!incluirPavimentacao) {
+      result = result.filter((obra) => !isPavementWork(obra));
+    }
+    return result;
+  }, [obras, ufFilter, modalidade, incluirPavimentacao]);
 
-    // Aplicação da Ordenação
+  const expressaoBusca = useMemo(() => parseSearchExpression(searchTerm), [searchTerm]);
+
+  const avaliacoesBusca = useMemo(
+    () => obrasAposFiltrosEstruturais.map((obra) => ({
+      obra,
+      ...evaluateSearch(obra, expressaoBusca, escopoBusca),
+    })),
+    [obrasAposFiltrosEstruturais, expressaoBusca, escopoBusca],
+  );
+
+  const resumoBusca = useMemo(() => {
+    const excluidos = avaliacoesBusca.filter((item) => item.motivo === "excluido_por_termo").length;
+    const semCorrespondencia = avaliacoesBusca.filter((item) => item.motivo === "nao_corresponde").length;
+    return {
+      termosInclusao: expressaoBusca.inclusoes.map((term) => term.original),
+      termosExclusao: expressaoBusca.exclusoes.map((term) => term.original),
+      escopoBusca,
+      totalAntesBusca: avaliacoesBusca.length,
+      totalExcluidos: excluidos,
+      totalSemCorrespondencia: semCorrespondencia,
+      todosExcluidos: avaliacoesBusca.length > 0
+        && excluidos === avaliacoesBusca.length
+        && expressaoBusca.exclusoes.length > 0,
+    };
+  }, [avaliacoesBusca, escopoBusca, expressaoBusca]);
+
+  const filteredObras = useMemo(() => {
+    const result = avaliacoesBusca.filter((item) => item.aprovado).map((item) => item.obra);
+
     return [...result].sort((a, b) => {
-      if (sortBy === "valor_desc") {
-        return (Number(b.valor_estimado) || 0) - (Number(a.valor_estimado) || 0);
-      }
-      if (sortBy === "valor_asc") {
-        return (Number(a.valor_estimado) || 0) - (Number(b.valor_estimado) || 0);
-      }
-      if (sortBy === "orgao") {
-        return (a.orgao || "").localeCompare(b.orgao || "");
-      }
-      if (sortBy === "data_asc") {
-        return new Date(a.data_publicacao || 0) - new Date(b.data_publicacao || 0);
-      }
-      // Padrão: data_desc (mais recente primeiro)
-      return new Date(b.data_publicacao || 0) - new Date(a.data_publicacao || 0);
+      if (sortBy === "valor_desc") return (Number(b.valor_estimado) || 0) - (Number(a.valor_estimado) || 0);
+      if (sortBy === "valor_asc") return (Number(a.valor_estimado) || 0) - (Number(b.valor_estimado) || 0);
+      if (sortBy === "orgao") return String(a.orgao || "").localeCompare(String(b.orgao || ""));
+      if (sortBy === "data_asc") return String(a.data_publicacao || "").localeCompare(String(b.data_publicacao || ""));
+      return String(b.data_publicacao || "").localeCompare(String(a.data_publicacao || ""));
     });
-  }, [obras, ufFilter, searchTerm, sortBy]);
+  }, [avaliacoesBusca, sortBy]);
 
-  // Volume total estimado somado de todas as obras filtradas
-  const volumeTotal = useMemo(() => {
-    return filteredObras.reduce((acc, curr) => acc + (Number(curr.valor_estimado) || 0), 0);
-  }, [filteredObras]);
+  const volumeTotal = useMemo(
+    () => filteredObras.reduce((total, obra) => total + (Number(obra.valor_estimado) || 0), 0),
+    [filteredObras],
+  );
 
   // Contagem de filtros ativos desviando do padrão
   const activeFiltersCount = useMemo(() => {
     let count = 0;
-    if (inicialDate !== DEFAULT_INITIAL_DATE) count++;
-    if (finalDate !== DEFAULT_FINAL_DATE) count++;
+    const hoje = getFormattedDate(0);
+    if (inicialDate !== hoje) count++;
+    if (finalDate !== hoje) count++;
     if (ufFilter !== DEFAULT_UF) count++;
     if (modalidade !== DEFAULT_MODALIDADE) count++;
-    if (sortBy !== DEFAULT_SORT_BY) count++;
+    if (!incluirPavimentacao) count++;
     if (searchTerm.trim() !== "") count++;
+    if (escopoBusca !== DEFAULT_SEARCH_SCOPE) count++;
     return count;
-  }, [inicialDate, finalDate, ufFilter, modalidade, sortBy, searchTerm]);
+  }, [inicialDate, finalDate, ufFilter, modalidade, incluirPavimentacao, searchTerm, escopoBusca]);
 
   // Restaura todos os filtros para os valores padrão
   const handleResetFilters = useCallback(() => {
-    setInicialDate(DEFAULT_INITIAL_DATE);
-    setFinalDate(DEFAULT_FINAL_DATE);
+    const hoje = getFormattedDate(0);
+    setInicialDate(hoje);
+    setFinalDate(hoje);
     setUfFilter(DEFAULT_UF);
     setModalidade(DEFAULT_MODALIDADE);
     setSortBy(DEFAULT_SORT_BY);
+    setIncluirPavimentacao(true);
     setSearchTerm("");
+    setEscopoBusca(DEFAULT_SEARCH_SCOPE);
   }, []);
+
+  const handleAnalysisComplete = useCallback((analysis) => {
+    if (!selectedObra) return;
+    const key = selectedObra.id_pncp || `${selectedObra.cnpj}:${selectedObra.ano}:${selectedObra.sequencial}`;
+    setAnalisesExigencias((current) => ({ ...current, [key]: analysis }));
+  }, [selectedObra]);
 
   return (
     <div className={`min-h-screen app-bg theme-${theme} font-sans p-4 sm:p-6 lg:p-8 selection:bg-amber-500 selection:text-slate-950 transition-colors duration-200`}>
@@ -260,7 +304,7 @@ export default function App() {
 
       <div className="max-w-7xl mx-auto space-y-6">
         <Header
-          onRefresh={() => fetchObras()}
+          onRefresh={() => fetchObras({ forcarAtualizacao: true })}
           loading={loading}
           theme={theme}
           onToggleTheme={handleToggleTheme}
@@ -278,11 +322,20 @@ export default function App() {
             setModalidade={setModalidade}
             sortBy={sortBy}
             setSortBy={setSortBy}
+            incluirPavimentacao={incluirPavimentacao}
+            setIncluirPavimentacao={setIncluirPavimentacao}
             searchTerm={searchTerm}
             setSearchTerm={setSearchTerm}
+            termosInclusao={expressaoBusca.inclusoes.map((term) => term.original)}
+            termosExclusao={expressaoBusca.exclusoes.map((term) => term.original)}
+            escopoBusca={escopoBusca}
+            setEscopoBusca={setEscopoBusca}
+            onRemoveTerm={(chip) => setSearchTerm((current) => removeSearchTerm(current, chip))}
             activeFiltersCount={activeFiltersCount}
             onResetFilters={handleResetFilters}
           />
+
+          <StatusBanner statusInfo={statusInfo} />
 
           <StatusBar
             statusInfo={statusInfo}
@@ -295,7 +348,8 @@ export default function App() {
           {/* Mini Dashboard Expansível de Estatísticas e Análise */}
           {showDashboard && (
             <MiniDashboard
-              obras={obras}
+              obras={filteredObras}
+              resumo={statusInfo?.metadados}
               onSelectUf={setUfFilter}
               onSelectModalidade={setModalidade}
               activeUf={ufFilter}
@@ -304,11 +358,15 @@ export default function App() {
           )}
 
           <ObrasList
+            key={`${inicialDate}:${finalDate}:${ufFilter}:${modalidade}:${sortBy}:${incluirPavimentacao}:${searchTerm}:${escopoBusca}`}
             obras={filteredObras}
             loading={loading}
             searchTerm={searchTerm}
             onClearSearch={() => setSearchTerm("")}
             onSelectObra={setSelectedObra}
+            analisesExigencias={analisesExigencias}
+            apiPagination={apiPagination}
+            resumoBusca={resumoBusca}
           />
         </main>
 
@@ -316,6 +374,7 @@ export default function App() {
         <ObraDetailModal
           obra={selectedObra}
           onClose={() => setSelectedObra(null)}
+          onAnalysisComplete={handleAnalysisComplete}
         />
 
         <AccessibilityFooter />

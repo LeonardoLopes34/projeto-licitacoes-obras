@@ -1,8 +1,9 @@
 import React, { useMemo } from "react";
-import { TrendingUp, Award, MapPin, Tag, ArrowRight, DollarSign, Layers } from "lucide-react";
+import { TrendingUp, Award, MapPin, Tag, Layers } from "lucide-react";
 
 export default function MiniDashboard({
   obras = [],
+  resumo = null,
   onSelectUf,
   onSelectModalidade,
   activeUf = "TODOS",
@@ -10,6 +11,39 @@ export default function MiniDashboard({
 }) {
   // Cálculo de todas as métricas em tempo real com useMemo
   const stats = useMemo(() => {
+    if (resumo && Number.isFinite(Number(resumo.total_filtrado))) {
+      const volumeTotal = Number(resumo.volume_estimado) || 0;
+      const modMap = {
+        concorrencia: { count: 0, volume: 0, nome: "Concorrência Eletrônica", code: 4 },
+        pregao: { count: 0, volume: 0, nome: "Pregão Eletrônico", code: 6 },
+        outros: { count: 0, volume: 0, nome: "Outras Modalidades", code: 0 },
+      };
+      Object.entries(resumo.agregados_modalidade || {}).forEach(([nome, dados]) => {
+        const group = nome.toLowerCase().includes("concorr")
+          ? modMap.concorrencia
+          : nome.toLowerCase().includes("preg")
+            ? modMap.pregao
+            : modMap.outros;
+        group.count += Number(dados.quantidade) || 0;
+        group.volume += Number(dados.volume) || 0;
+      });
+      const topUfs = Object.entries(resumo.agregados_uf || {})
+        .map(([uf, dados]) => ({
+          uf,
+          count: Number(dados.quantidade) || 0,
+          volume: Number(dados.volume) || 0,
+        }))
+        .sort((a, b) => b.volume - a.volume || a.uf.localeCompare(b.uf))
+        .slice(0, 5);
+      return {
+        volumeTotal,
+        totalObras: Number(resumo.total_filtrado) || 0,
+        ticketMedio: Number(resumo.total_filtrado) ? volumeTotal / Number(resumo.total_filtrado) : 0,
+        maiorObra: null,
+        topUfs,
+        modMap,
+      };
+    }
     if (!obras || obras.length === 0) {
       return null;
     }
@@ -69,7 +103,7 @@ export default function MiniDashboard({
       topUfs,
       modMap,
     };
-  }, [obras]);
+  }, [obras, resumo]);
 
   if (!stats) return null;
 

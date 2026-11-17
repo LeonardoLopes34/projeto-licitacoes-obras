@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
   TrendingUp,
   Coins,
@@ -16,6 +16,7 @@ import {
   Sun,
   Moon
 } from "lucide-react";
+import { buscarObras, cancelarBuscaAtual } from "../api";
 
 // Lista de estados brasileiros para o filtro
 const ESTADOS_BRASIL = [
@@ -61,11 +62,13 @@ const getFormattedDate = (offsetDays = 0) => {
 export default function NeitImportsApp() {
   const [obras, setObras] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [statusInfo, setStatusInfo] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTab, setActiveTab] = useState("todas");
   const [selectedUf, setSelectedUf] = useState("TODOS");
   const [selectedObra, setSelectedObra] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const requestIdRef = useRef(0);
   const itemsPerPage = 10;
 
   // Controle de Tema Claro / Escuro com persistência local
@@ -90,31 +93,56 @@ export default function NeitImportsApp() {
   const isLight = theme === "light";
 
   // Filtros de Data
-  const [inicialDate, setInicialDate] = useState(getFormattedDate(-2));
-  const [finalDate, setFinalDate] = useState(getFormattedDate(0));
+  const inicialDate = getFormattedDate(-2);
+  const finalDate = getFormattedDate(0);
 
   // Busca dados reais da API
   const fetchObrasFromApi = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
     setLoading(true);
+    setCurrentPage(1);
     try {
       const initParam = inicialDate.replace(/-/g, "");
       const finalParam = finalDate.replace(/-/g, "");
-      const baseUrl = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000/api/v1/obras";
-
-      const url = `${baseUrl}?inicial_date=${initParam}&final_date=${finalParam}&modalidade=0`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
-      const data = await res.json();
+      const modalidadeRemota =
+        activeTab === "concorrencia" ? 4 : activeTab === "pregao" ? 6 : 0;
+      const remoteParams = {
+        inicial_date: initParam,
+        final_date: finalParam,
+        modalidade: modalidadeRemota,
+        max_paginas: modalidadeRemota === 0 ? 1 : 5,
+      };
+      if (selectedUf !== "TODOS") {
+        remoteParams.uf = selectedUf;
+      }
+      const data = await buscarObras({
+        ...remoteParams,
+      });
+      if (requestId !== requestIdRef.current) return;
       setObras(data.dados || []);
+      setStatusInfo({
+        status: data.status,
+        mensagem: data.mensagem,
+        metadados: data.metadados,
+      });
     } catch (err) {
+      if (requestId !== requestIdRef.current || err.name === "AbortError") return;
       console.error("Erro ao buscar dados da API:", err);
+      setStatusInfo({
+        status: "erro",
+        mensagem: "Não foi possível carregar os dados do PNCP.",
+        metadados: { origem: "PNCP", parcial: false, paginas_com_erro: 0 },
+      });
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) {
+        setLoading(false);
+      }
     }
-  }, [inicialDate, finalDate]);
+  }, [inicialDate, finalDate, activeTab, selectedUf]);
 
   useEffect(() => {
     fetchObrasFromApi();
+    return () => cancelarBuscaAtual();
   }, [fetchObrasFromApi]);
 
   // Formatação de Moeda
@@ -297,6 +325,18 @@ export default function NeitImportsApp() {
     const start = (currentPage - 1) * itemsPerPage;
     return filteredObras.slice(start, start + itemsPerPage);
   }, [filteredObras, currentPage, itemsPerPage]);
+
+  const metadata = statusInfo?.metadados || {};
+  const hasPageErrors = Number(metadata.paginas_com_erro) > 0;
+  const isOffline = metadata.origem === "banco_local";
+  const showStatus = Boolean(statusInfo && (statusInfo.status === "erro" || isOffline || metadata.parcial));
+  const statusMessage = isOffline
+    ? "Exibindo dados salvos localmente; o PNCP não respondeu agora."
+    : statusInfo?.status === "erro"
+      ? statusInfo.mensagem
+      : hasPageErrors
+        ? statusInfo?.mensagem || "Algumas páginas não puderam ser consultadas."
+        : "O limite de páginas foi atingido; refine o período ou selecione uma modalidade específica.";
 
   return (
     <div
@@ -641,6 +681,27 @@ export default function NeitImportsApp() {
           </div>
         </div>
 
+        {showStatus && (
+          <div
+            role={statusInfo?.status === "erro" ? "alert" : "status"}
+            aria-live="polite"
+            className={`rounded-lg border px-4 py-3 text-xs ${
+              statusInfo?.status === "erro"
+                ? isLight
+                  ? "border-red-200 bg-red-50 text-red-700"
+                  : "border-red-500/30 bg-red-500/10 text-red-300"
+                : isLight
+                  ? "border-amber-200 bg-amber-50 text-amber-800"
+                  : "border-amber-500/30 bg-amber-500/10 text-amber-200"
+            }`}
+          >
+            <strong className="font-semibold">
+              {statusInfo?.status === "erro" ? "Falha na busca" : isOffline ? "Modo offline" : hasPageErrors ? "Busca parcial" : "Limite de consulta"}
+            </strong>{" "}
+            <span>{statusMessage}</span>
+          </div>
+        )}
+
         {/* 5. TABELA DE LICITAÇÕES */}
         <div
           className={`border rounded-xl overflow-hidden shadow-sm transition-colors ${
@@ -680,9 +741,9 @@ export default function NeitImportsApp() {
                     </td>
                   </tr>
                 ) : (
-                  paginatedObras.map((obra) => (
+                  paginatedObras.map((obra, index) => (
                     <tr
-                      key={obra.id_pncp || obra.numero_controle_pncp || Math.random()}
+                      key={obra.id_pncp || obra.numero_controle_pncp || `sandbox-${index}`}
                       onClick={() => setSelectedObra(obra)}
                       className={`transition-colors cursor-pointer group ${
                         isLight ? "hover:bg-slate-50" : "hover:bg-[#191d26]"

@@ -1,5 +1,6 @@
 import React from "react";
 import { Building2, RefreshCw, Sun, Moon } from "lucide-react";
+import { SANDBOX_URL } from "../config";
 
 export default function Header({ onRefresh, loading, theme = "dark", onToggleTheme }) {
   const isDark = theme === "dark";
@@ -58,7 +59,7 @@ export default function Header({ onRefresh, loading, theme = "dark", onToggleThe
         )}
 
         <a
-          href="/sandbox.html"
+          href={SANDBOX_URL}
           aria-label="Abrir Sandbox de Design e Mocks em página isolada"
           className="flex items-center justify-center gap-2 px-3.5 py-2.5 min-h-11 rounded-xl text-xs sm:text-sm font-medium transition duration-200 border focus-visible:outline-2 focus-visible:outline-amber-400 focus-visible:outline-offset-2 shadow-sm"
           style={{

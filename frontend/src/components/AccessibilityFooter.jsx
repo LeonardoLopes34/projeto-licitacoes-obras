@@ -10,18 +10,18 @@ export default function AccessibilityFooter() {
       style={{ borderColor: "var(--border-subtle)", color: "var(--text-muted)" }}
     >
       <div className="theme-card border p-5 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6 transition-colors">
-        {/* Bloco de Conformidade WCAG 2 Level AA */}
+        {/* Bloco de compromisso com acessibilidade */}
         <div className="space-y-2 max-w-xl">
           <div className="flex items-center gap-2 text-sm font-bold" style={{ color: "var(--text-primary)" }}>
             <ShieldCheck className="w-5 h-5 text-amber-500" aria-hidden="true" />
-            <span>Conformidade com Diretrizes de Acessibilidade (WCAG 2 Nível AA)</span>
+            <span>Compromisso com acessibilidade digital</span>
           </div>
           <p className="leading-relaxed" style={{ color: "var(--text-muted)" }}>
             Esta interface foi desenvolvida seguindo os padrões internacionais do{" "}
             <strong className="font-medium" style={{ color: "var(--text-secondary)" }}>
               W3C Web Accessibility Initiative (WAI)
             </strong>
-            , atendendo aos critérios de sucesso dos princípios: Perceptível, Operável, Compreensível e Robusto.
+            . A conformidade formal depende de auditoria automatizada e revisão manual contínuas.
           </p>
         </div>
 
@@ -31,7 +31,7 @@ export default function AccessibilityFooter() {
             href="https://www.w3.org/WAI/WCAG2AA-Conformance"
             target="_blank"
             rel="noopener noreferrer"
-            aria-label="Verificação de Conformidade WCAG 2 Level AA no site oficial do W3C WAI (abre em nova aba)"
+            aria-label="Consultar a referência WCAG no site oficial do W3C WAI (abre em nova aba)"
             className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium transition border focus-visible:outline-2 focus-visible:outline-amber-400 focus-visible:outline-offset-2"
             style={{
               backgroundColor: "var(--btn-action-bg)",
@@ -46,9 +46,9 @@ export default function AccessibilityFooter() {
                 color: "var(--accent-amber-text)",
               }}
             >
-              WCAG 2.2 AA
+              Acessibilidade em evolução
             </span>
-            <span>Conformidade W3C WAI</span>
+            <span>Referência W3C WAI</span>
             <ExternalLink className="w-3.5 h-3.5 opacity-70" aria-hidden="true" />
           </a>
         </div>

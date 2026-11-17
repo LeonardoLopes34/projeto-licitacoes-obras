@@ -1,30 +1,120 @@
-import React, { useEffect, useRef } from "react";
-import { X, ExternalLink, MapPin, Tag, Calendar, FileText, Building, DollarSign } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
+import {
+  X,
+  ExternalLink,
+  MapPin,
+  Tag,
+  Calendar,
+  FileText,
+  DollarSign,
+} from "lucide-react";
+import { DocumentosSection, ExigenciasSection } from "./ObraDocumentAnalysisSections";
+import { buscarTipoContratacao } from "../api";
 
-export default function ObraDetailModal({ obra, onClose }) {
+const textoOuNaoInformado = (valor) => {
+  if (typeof valor === "string" && valor.trim()) return valor.trim();
+  if (typeof valor === "number") return String(valor);
+  return "Não informado";
+};
+
+const formatarOrigemTipo = (origem) => {
+  if (typeof origem === "string" && origem.trim()) return origem.trim();
+  if (Array.isArray(origem)) {
+    const campos = origem.filter((campo) => typeof campo === "string" && campo.trim());
+    return campos.length ? campos.join(", ") : "Não informada";
+  }
+  if (origem && typeof origem === "object") {
+    const campos = Object.entries(origem)
+      .filter(([, valor]) => valor !== null && valor !== undefined && String(valor).trim())
+      .map(([campo, valor]) => `${campo}: ${String(valor)}`);
+    return campos.length ? campos.join(" · ") : "Não informada";
+  }
+  return "Não informada";
+};
+
+export default function ObraDetailModal({ obra, onClose, onAnalysisComplete }) {
   const modalRef = useRef(null);
+  const previouslyFocused = useRef(null);
+  const [tipoEnriquecido, setTipoEnriquecido] = useState(null);
 
-  // Fechar com a tecla Escape e gerenciar scroll do body
+  // Gerenciar foco, Escape e scroll do body enquanto o modal está aberto.
   useEffect(() => {
     if (!obra) return;
 
-    const handleKeyDown = (e) => {
-      if (e.key === "Escape") {
-        onClose();
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    // Prevenir rolagem do fundo enquanto o modal está aberto
+    previouslyFocused.current = document.activeElement;
+    const firstFocusable = modalRef.current?.querySelector(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+    );
+    (firstFocusable || modalRef.current)?.focus();
     document.body.style.overflow = "hidden";
 
     return () => {
-      window.removeEventListener("keydown", handleKeyDown);
       document.body.style.overflow = "unset";
+      previouslyFocused.current?.focus?.();
     };
-  }, [obra, onClose]);
+  }, [obra]);
+
+  useEffect(() => {
+    if (!obra) {
+      setTipoEnriquecido(null);
+      return undefined;
+    }
+    const { cnpj, ano, sequencial } = obra;
+    if (!cnpj || !ano || !sequencial || obra.criterio_julgamento) {
+      setTipoEnriquecido(null);
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    buscarTipoContratacao({
+      cnpj,
+      ano,
+      sequencial,
+      modalidade: obra.modalidade,
+      tipoInstrumento: obra.tipo_instrumento,
+      signal: controller.signal,
+    })
+      .then((data) => {
+        if (!controller.signal.aborted && data?.tipo_contratacao) {
+          setTipoEnriquecido(data);
+        }
+      })
+      .catch(() => {
+        // Os campos existentes continuam visíveis se o complemento falhar.
+      });
+
+    return () => controller.abort();
+  }, [obra]);
 
   if (!obra) return null;
+
+  const handleModalKeyDown = (event) => {
+    if (event.key === "Escape") {
+      onClose();
+      return;
+    }
+    if (event.key !== "Tab") return;
+
+    const focusables = Array.from(
+      modalRef.current?.querySelectorAll(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ) || [],
+    );
+    if (!focusables.length) {
+      event.preventDefault();
+      modalRef.current?.focus();
+      return;
+    }
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
 
   const formatDate = (dateStr) => {
     if (!dateStr) return "Não informada";
@@ -41,18 +131,32 @@ export default function ObraDetailModal({ obra, onClose }) {
     }
   };
 
-  const valorFormatado = obra.valor_estimado
-    ? `R$ ${obra.valor_estimado.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  const valorNumerico = Number(obra.valor_estimado);
+  const valorFormatado = Number.isFinite(valorNumerico)
+    ? `R$ ${valorNumerico.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     : "Valor não informado";
 
   const idPncp = obra.id_pncp || obra.numero_controle_pncp || "Não informado";
-
+  const tipoContratacao = textoOuNaoInformado(
+    tipoEnriquecido?.tipo_contratacao || obra.tipo_contratacao || obra.modalidade,
+  );
+  const modalidade = textoOuNaoInformado(obra.modalidade);
+  const criterioJulgamento = textoOuNaoInformado(
+    tipoEnriquecido?.criterio_julgamento || obra.criterio_julgamento,
+  );
+  const tipoInstrumento = textoOuNaoInformado(
+    tipoEnriquecido?.tipo_instrumento || obra.tipo_instrumento,
+  );
+  const origemTipo = formatarOrigemTipo(
+    tipoEnriquecido?.tipo_contratacao_origem || obra.tipo_contratacao_origem,
+  );
+  const obraRequestKey = obra.id_pncp || obra.numero_controle_pncp || `${obra.cnpj}:${obra.ano}:${obra.sequencial}`;
   return (
     <div
       role="dialog"
       aria-modal="true"
       aria-labelledby="modal-obra-title"
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 overflow-y-auto"
     >
       {/* Backdrop com desfoque de fundo */}
       <div
@@ -64,7 +168,9 @@ export default function ObraDetailModal({ obra, onClose }) {
       {/* Container do Modal */}
       <div
         ref={modalRef}
-        className="theme-card relative w-full max-w-2xl border rounded-2xl p-6 sm:p-7 shadow-2xl z-10 space-y-5 my-8 max-h-[90vh] flex flex-col justify-between animate-in fade-in zoom-in-95 duration-200"
+        tabIndex={-1}
+        onKeyDown={handleModalKeyDown}
+        className="theme-card relative w-full max-w-5xl xl:max-w-6xl border rounded-2xl p-6 sm:p-8 shadow-2xl z-10 space-y-5 my-4 max-h-[92vh] flex flex-col justify-between animate-in fade-in zoom-in-95 duration-200"
       >
         {/* CABEÇALHO DO MODAL */}
         <div className="space-y-3 shrink-0">
@@ -117,7 +223,7 @@ export default function ObraDetailModal({ obra, onClose }) {
 
           <h2
             id="modal-obra-title"
-            className="text-base sm:text-lg font-bold tracking-tight uppercase"
+            className="text-base sm:text-xl font-bold tracking-tight uppercase"
             style={{ color: "var(--text-primary)" }}
           >
             {obra.orgao || "Órgão Público não especificado"}
@@ -125,7 +231,7 @@ export default function ObraDetailModal({ obra, onClose }) {
         </div>
 
         {/* CORPO DO MODAL COM SCROLL */}
-        <div className="space-y-4 overflow-y-auto pr-1">
+        <div className="flex-1 space-y-5 overflow-y-auto pr-2">
           {/* Grid de Informações Financeiras e Datas */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
             <div
@@ -182,6 +288,53 @@ export default function ObraDetailModal({ obra, onClose }) {
             </div>
           )}
 
+          {/* Campos atômicos permitem auditar o texto resumido exibido no card. */}
+          <section
+            aria-labelledby="modal-tipo-contratacao"
+            className="rounded-xl border p-4 space-y-3"
+            style={{ backgroundColor: "var(--card-bg)", borderColor: "var(--border-subtle)" }}
+          >
+            <div>
+              <h3
+                id="modal-tipo-contratacao"
+                className="text-[11px] font-bold uppercase tracking-wider"
+                style={{ color: "var(--text-dim)" }}
+              >
+                Tipo da contratação
+              </h3>
+              <p className="mt-1 break-words text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                {tipoContratacao}
+              </p>
+            </div>
+
+            <dl className="grid grid-cols-1 gap-x-5 gap-y-3 sm:grid-cols-2 lg:grid-cols-4 text-xs">
+              <div>
+                <dt className="font-bold uppercase tracking-wider text-[10px]" style={{ color: "var(--text-dim)" }}>
+                  Modalidade
+                </dt>
+                <dd className="mt-1 break-words" style={{ color: "var(--text-secondary)" }}>{modalidade}</dd>
+              </div>
+              <div>
+                <dt className="font-bold uppercase tracking-wider text-[10px]" style={{ color: "var(--text-dim)" }}>
+                  Critério de julgamento
+                </dt>
+                <dd className="mt-1 break-words" style={{ color: "var(--text-secondary)" }}>{criterioJulgamento}</dd>
+              </div>
+              <div>
+                <dt className="font-bold uppercase tracking-wider text-[10px]" style={{ color: "var(--text-dim)" }}>
+                  Tipo de instrumento
+                </dt>
+                <dd className="mt-1 break-words" style={{ color: "var(--text-secondary)" }}>{tipoInstrumento}</dd>
+              </div>
+              <div>
+                <dt className="font-bold uppercase tracking-wider text-[10px]" style={{ color: "var(--text-dim)" }}>
+                  Origem do tipo
+                </dt>
+                <dd className="mt-1 break-words" style={{ color: "var(--text-secondary)" }}>{origemTipo}</dd>
+              </div>
+            </dl>
+          </section>
+
           {/* Objeto Completo na Íntegra */}
           <div className="space-y-1.5">
             <div
@@ -192,7 +345,7 @@ export default function ObraDetailModal({ obra, onClose }) {
               <span>Objeto da Licitação (Íntegra)</span>
             </div>
             <div
-              className="p-4 rounded-xl border text-xs sm:text-sm leading-relaxed whitespace-pre-wrap max-h-60 overflow-y-auto"
+              className="p-4 rounded-xl border text-xs sm:text-sm leading-relaxed whitespace-pre-wrap max-h-64 overflow-y-auto"
               style={{
                 backgroundColor: "var(--bg-main)",
                 borderColor: "var(--border-subtle)",
@@ -202,6 +355,13 @@ export default function ObraDetailModal({ obra, onClose }) {
               {obra.objeto || "Descrição do objeto não informada no edital."}
             </div>
           </div>
+
+          <ExigenciasSection
+            key={`exigencias:${obraRequestKey}`}
+            obra={obra}
+            onAnalysisComplete={onAnalysisComplete}
+          />
+          <DocumentosSection key={`documentos:${obraRequestKey}`} obra={obra} />
         </div>
 
         {/* FOOTER DO MODAL */}

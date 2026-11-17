@@ -1,0 +1,121 @@
+[
+  {
+    "id": "pavimentacao_com_drenagem_excluida",
+    "expressao": "pavimentação -drenagem",
+    "registro": {
+      "objeto": "Pavimentação de vias urbanas com drenagem pluvial.",
+      "status_classificacao": "aprovado"
+    },
+    "esperado": {"aprovado": false, "motivo_filtro": "excluido_por_termo", "termo": "drenagem", "campo": "objeto"}
+  },
+  {
+    "id": "engenharia_apenas_no_orgao_nao_aprova_escopo_padrao",
+    "expressao": "engenharia",
+    "registro": {
+      "objeto": "Aquisição de uniformes escolares.",
+      "orgao": "Secretaria Municipal de Engenharia",
+      "status_classificacao": "aprovado"
+    },
+    "esperado": {"aprovado": false, "motivo_filtro": "nao_corresponde_termo"}
+  },
+  {
+    "id": "engenharia_no_objeto_aprova",
+    "expressao": "engenharia",
+    "registro": {
+      "objeto": "Serviço de engenharia para reforma da escola.",
+      "status_classificacao": "aprovado"
+    },
+    "esperado": {"aprovado": true, "motivo_filtro": "incluido_por_termo", "termo": "engenharia", "campo": "objeto"}
+  },
+  {
+    "id": "termo_na_descricao_do_item_aprova",
+    "expressao": "metálica",
+    "registro": {
+      "objeto": "Reforma de praça pública.",
+      "itens": [{"descricao": "Fornecimento e instalação de estrutura metálica."}],
+      "status_classificacao": "aprovado"
+    },
+    "esperado": {"aprovado": true, "motivo_filtro": "incluido_por_termo", "termo": "metalica", "campo": "itens"}
+  },
+  {
+    "id": "acento_e_pontuacao_equivalentes",
+    "expressao": "pavimentacao",
+    "registro": {
+      "objeto": "Pavimentação: de vias — etapa 2.",
+      "status_classificacao": "aprovado"
+    },
+    "esperado": {"aprovado": true, "motivo_filtro": "incluido_por_termo", "termo": "pavimentacao", "campo": "objeto"}
+  },
+  {
+    "id": "frase_negativa_com_aspas",
+    "expressao": "pavimentação -\"registro de preços\"",
+    "registro": {
+      "objeto": "Registro de preços para futura pavimentação de vias.",
+      "status_classificacao": "aprovado"
+    },
+    "esperado": {"aprovado": false, "motivo_filtro": "excluido_por_termo", "termo": "registro de precos", "campo": "objeto"}
+  },
+  {
+    "id": "hifen_interno_nao_e_exclusao",
+    "expressao": "obra-de-arte",
+    "registro": {
+      "objeto": "Recuperação de obra de arte especial.",
+      "status_classificacao": "aprovado"
+    },
+    "esperado": {"aprovado": true, "motivo_filtro": "incluido_por_termo", "termo": "obra de arte", "campo": "objeto"}
+  },
+  {
+    "id": "orgao_pode_ser_escopo_opcional",
+    "expressao": "engenharia",
+    "escopo_busca": "objeto_itens_orgao",
+    "registro": {
+      "objeto": "Aquisição de uniformes escolares.",
+      "orgao": "Secretaria Municipal de Engenharia",
+      "status_classificacao": "aprovado"
+    },
+    "esperado": {"aprovado": true, "motivo_filtro": "incluido_por_termo", "termo": "engenharia", "campo": "orgao"}
+  },
+  {
+    "id": "documento_so_no_escopo_todos_metadados",
+    "expressao": "\"memorial descritivo\"",
+    "escopo_busca": "todos_metadados",
+    "registro": {
+      "objeto": "Reforma de escola.",
+      "documentos": [{"titulo": "Memorial descritivo da obra"}],
+      "status_classificacao": "aprovado"
+    },
+    "esperado": {"aprovado": true, "motivo_filtro": "incluido_por_termo", "termo": "memorial descritivo", "campo": "documentos"}
+  },
+  {
+    "id": "revisao_pendente_eh_distinta",
+    "expressao": "",
+    "registro": {
+      "objeto": "Serviço a revisar.",
+      "status_classificacao": "revisao_pendente"
+    },
+    "esperado": {"aprovado": true, "motivo_filtro": "revisao_pendente"}
+  },
+  {
+    "id": "rejeitado_na_classificacao_nao_muda_por_exclusao",
+    "expressao": "pavimentação -drenagem",
+    "registro": {
+      "objeto": "Pavimentação e drenagem.",
+      "status_classificacao": "rejeitado"
+    },
+    "esperado": {"aprovado": false, "motivo_filtro": "rejeitado"}
+  },
+  {
+    "id": "tipo_composto_e_duplicidade_anotados",
+    "expressao": "pavimentação",
+    "registro": {
+      "id_pncp": "PNCP-001",
+      "objeto": "Pavimentação de vias.",
+      "modalidade": "Concorrência por Menor Preço",
+      "criterio_julgamento": "Menor Preço",
+      "tipo_contratacao_esperado": "Concorrência por Menor Preço - Menor Preço",
+      "duplicado_de": "PNCP-001",
+      "status_classificacao": "aprovado"
+    },
+    "esperado": {"aprovado": true, "motivo_filtro": "incluido_por_termo", "termo": "pavimentacao", "campo": "objeto"}
+  }
+]

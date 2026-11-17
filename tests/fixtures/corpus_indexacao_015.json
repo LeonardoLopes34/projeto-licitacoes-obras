@@ -1,0 +1,218 @@
+{
+  "schema_version": "1.0",
+  "nome": "corpus_indexacao_015_sintetico",
+  "dados_sinteticos": true,
+  "descricao": "Corpus reproduzivel e inteiramente sintetico para validar chunking, proveniencia e recuperacao interna da Spec 015. Nao contem PDFs, ZIPs, URLs, credenciais ou dados de contratacoes reais.",
+  "metricas_recomendadas": {
+    "recall_at_k": {
+      "k": 3,
+      "criterio": "Cada consulta deve recuperar ao menos uma citacao esperada entre os tres primeiros trechos, sempre com os filtros de proveniencia aplicados."
+    },
+    "posicao_primeiro_trecho_correto": {
+      "maximo": 3
+    },
+    "segmentar_resultados_por_origem_texto": [
+      "pdf_texto",
+      "ocr"
+    ]
+  },
+  "casos": [
+    {
+      "id": "pdf-digital-habilitacao",
+      "tipo_entrada": "pdf_digital",
+      "descricao": "Edital digital com paragrafos corridos e exigencias de habilitacao.",
+      "tags": [
+        "texto_digital",
+        "paragrafo"
+      ],
+      "documentos": [
+        {
+          "id": "edital-digital-a",
+          "titulo": "Edital sintetico de reforma escolar",
+          "paginas": [
+            {
+              "pagina": 1,
+              "origem_texto_esperada": "pdf_texto",
+              "texto": "1. Objeto: reforma de uma escola ficticia. A participante devera apresentar atestado de capacidade tecnica compativel com servicos de reforma."
+            },
+            {
+              "pagina": 2,
+              "origem_texto_esperada": "pdf_texto",
+              "texto": "2. Habilitacao: sera exigida certidao de regularidade fiscal e declaracao de inexistencia de impedimento para contratar."
+            }
+          ]
+        }
+      ],
+      "perguntas": [
+        {
+          "id": "digital-atestado-tecnico",
+          "consulta": "Qual comprovacao tecnica a participante deve apresentar?",
+          "citacoes_esperadas": [
+            {
+              "documento_id": "edital-digital-a",
+              "pagina": 1,
+              "trecho": "apresentar atestado de capacidade tecnica compativel com servicos de reforma"
+            }
+          ]
+        },
+        {
+          "id": "digital-regularidade-fiscal",
+          "consulta": "Qual certidao fiscal e solicitada?",
+          "citacoes_esperadas": [
+            {
+              "documento_id": "edital-digital-a",
+              "pagina": 2,
+              "trecho": "certidao de regularidade fiscal"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pdf-digitalizado-ocr",
+      "tipo_entrada": "pdf_digitalizado",
+      "descricao": "Pagina digitalizada que depende de OCR e preserva a confianca da extracao.",
+      "tags": [
+        "ocr",
+        "baixa_confianca"
+      ],
+      "documentos": [
+        {
+          "id": "anexo-ocr-b",
+          "titulo": "Anexo sintetico digitalizado",
+          "paginas": [
+            {
+              "pagina": 1,
+              "origem_texto_esperada": "ocr",
+              "confianca_ocr_esperada": 0.62,
+              "texto": "A empresa participante devera encaminhar declaracao de visita tecnica ou justificar formalmente a sua dispensa."
+            }
+          ]
+        }
+      ],
+      "perguntas": [
+        {
+          "id": "ocr-declaracao-visita",
+          "consulta": "O que deve acompanhar a proposta sobre visita tecnica?",
+          "citacoes_esperadas": [
+            {
+              "documento_id": "anexo-ocr-b",
+              "pagina": 1,
+              "trecho": "declaracao de visita tecnica ou justificar formalmente a sua dispensa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "zip-com-pdfs-independentes",
+      "tipo_entrada": "zip_com_pdfs",
+      "descricao": "Arquivo compactado com dois PDFs internos; cada PDF e uma fonte independente para citacao.",
+      "tags": [
+        "zip",
+        "multiplos_pdfs",
+        "proveniencia"
+      ],
+      "documentos": [
+        {
+          "id": "zip-edital-c",
+          "titulo": "Edital interno sintetico",
+          "paginas": [
+            {
+              "pagina": 1,
+              "origem_texto_esperada": "pdf_texto",
+              "texto": "O prazo ficticio de execucao da obra e de cento e vinte dias, contado da ordem de servico."
+            }
+          ]
+        },
+        {
+          "id": "zip-planilha-c",
+          "titulo": "Planilha interna sintetica",
+          "paginas": [
+            {
+              "pagina": 1,
+              "origem_texto_esperada": "pdf_texto",
+              "texto": "A planilha sintetica indica cobertura, pintura e acessibilidade como grupos de servicos previstos."
+            }
+          ]
+        }
+      ],
+      "perguntas": [
+        {
+          "id": "zip-prazo-execucao",
+          "consulta": "Qual e o prazo de execucao previsto?",
+          "citacoes_esperadas": [
+            {
+              "documento_id": "zip-edital-c",
+              "pagina": 1,
+              "trecho": "prazo ficticio de execucao da obra e de cento e vinte dias"
+            }
+          ]
+        },
+        {
+          "id": "zip-servicos-planilha",
+          "consulta": "Quais grupos de servicos aparecem na planilha?",
+          "citacoes_esperadas": [
+            {
+              "documento_id": "zip-planilha-c",
+              "pagina": 1,
+              "trecho": "cobertura, pintura e acessibilidade como grupos de servicos"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "listas-e-tabelas",
+      "tipo_entrada": "pdf_digital",
+      "descricao": "Documento digital com lista enumerada e tabela em texto plano para exercitar limites de chunking sem perder a pagina.",
+      "tags": [
+        "lista",
+        "tabela",
+        "estrutura"
+      ],
+      "documentos": [
+        {
+          "id": "anexo-estruturado-d",
+          "titulo": "Anexo sintetico de itens e quantitativos",
+          "paginas": [
+            {
+              "pagina": 1,
+              "origem_texto_esperada": "pdf_texto",
+              "texto": "Itens obrigatorios: 1) cronograma fisico-financeiro; 2) composicao de custos; 3) declaracao de disponibilidade de equipe."
+            },
+            {
+              "pagina": 2,
+              "origem_texto_esperada": "pdf_texto",
+              "texto": "Tabela de referencia\nServico | Unidade | Quantidade\nPintura interna | metro quadrado | 480\nRampa acessivel | unidade | 2"
+            }
+          ]
+        }
+      ],
+      "perguntas": [
+        {
+          "id": "lista-cronograma",
+          "consulta": "Qual documento de planejamento consta na lista de itens obrigatorios?",
+          "citacoes_esperadas": [
+            {
+              "documento_id": "anexo-estruturado-d",
+              "pagina": 1,
+              "trecho": "cronograma fisico-financeiro"
+            }
+          ]
+        },
+        {
+          "id": "tabela-rampa",
+          "consulta": "Qual a quantidade prevista para rampa acessivel?",
+          "citacoes_esperadas": [
+            {
+              "documento_id": "anexo-estruturado-d",
+              "pagina": 2,
+              "trecho": "Rampa acessivel | unidade | 2"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

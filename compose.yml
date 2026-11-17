@@ -1,0 +1,39 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: licitacoes-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-licitacoes_obras}
+      POSTGRES_USER: ${POSTGRES_USER:-licitacoes}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-licitacoes_dev_change_me}
+    ports:
+      # A porta 5432 pode estar reservada pelo Windows/Hyper-V.
+      # O PostgreSQL continua ouvindo em 5432 dentro do container.
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - licitacoes_pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: .
+    container_name: licitacoes-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      # Sobrescreve valores do .env que só valem fora do container.
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-licitacoes}:${POSTGRES_PASSWORD:-licitacoes_dev_change_me}@postgres:5432/${POSTGRES_DB:-licitacoes_obras}
+      TESSERACT_CMD: ""
+    ports:
+      - "127.0.0.1:8000:8000"
+
+volumes:
+  licitacoes_pgdata:

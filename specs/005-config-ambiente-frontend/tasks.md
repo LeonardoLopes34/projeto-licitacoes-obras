@@ -1,0 +1,10 @@
+# Tasks — Spec 005: Configuração de Ambiente do Frontend (Vite)
+
+- [ ] Decidir entre Opção A (mover `.env` para `frontend/`) ou Opção B (`envDir` no `vite.config.js`) (R005-1)
+- [ ] Criar `frontend/.env.development` com `VITE_API_URL` apontando para `http://127.0.0.1:8000/api/v1` (R005-1)
+- [ ] Criar `frontend/.env.production` com `VITE_API_URL` apontando para o domínio real da API (R005-1)
+- [ ] Criar módulo `src/config.js` que lê `import.meta.env.VITE_API_URL` e lança erro se ausente (R005-3)
+- [ ] Remover fallback hardcoded `http://127.0.0.1:8000/api/v1/obras` de `frontend/src/App.jsx:103` (R005-2)
+- [ ] Atualizar todas as chamadas `fetch` para usar `API_URL` do módulo de config (R005-2)
+- [ ] Rodar `npm run build` sem `VITE_API_URL` definida e confirmar que falha (R005-3)
+- [ ] Rodar `npm run build` com `VITE_API_URL` definida e inspecionar `dist/` confirmando ausência de `127.0.0.1`/`localhost` (R005-2)
