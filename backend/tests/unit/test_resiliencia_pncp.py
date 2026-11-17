@@ -24,15 +24,20 @@ def _offline_result(**kwargs):
     }
 
 
-def test_configuracao_padrao_falha_rapido_e_abre_circuito():
-    assert settings.pncp_timeout_seconds == 3.0
+def test_configuracao_pncp_reserva_tempo_para_retries_e_abre_circuito():
+    assert settings.pncp_timeout_seconds == 8.0
+    assert settings.pncp_connect_timeout_seconds == 3.0
+    assert settings.pncp_max_concurrent_requests == 1
+    assert settings.pncp_request_interval_seconds == 2.0
+    assert settings.pncp_rate_limit_retry_seconds == 5.0
     assert settings.pncp_circuit_failure_threshold == 3
 
 
 def test_timeout_global_considera_quantidade_de_paginas():
-    assert pncp_service._search_timeout_seconds(0, 1) == 3.0
-    assert pncp_service._search_timeout_seconds(4, 5) == 15.0
-    assert pncp_service._search_timeout_seconds(0, 5) == 45.0
+    assert pncp_service._search_timeout_seconds(0, 1) == 45.0
+    assert pncp_service._search_timeout_seconds(4, 5) == 75.0
+    assert pncp_service._search_timeout_seconds(0, 5) == 225.0
+    assert pncp_service.search_request_timeout_seconds(0, 1) == 50.0
 
 
 @pytest.fixture
@@ -73,6 +78,66 @@ def test_circuit_breaker_nao_abre_com_uma_falha_lenta():
     assert circuit.consecutive_failures == 1
     assert circuit.last_response_time == 3.0
     assert circuit.allow_request() is True
+
+
+@pytest.mark.asyncio
+async def test_snapshot_local_eh_usado_antes_de_chamar_o_pncp(monkeypatch):
+    calls = 0
+
+    async def local_snapshot(**_):
+        return {
+            "status": "sucesso_local",
+            "mensagem": "Dados locais",
+            "total_encontradas": 0,
+            "dados": [],
+            "metadados": {"origem": "banco_local", "parcial": False},
+        }
+
+    async def unexpected_search(*args):
+        nonlocal calls
+        calls += 1
+        return [], ExecucaoBusca()
+
+    monkeypatch.setattr(pncp_service, "_resultado_local_disponivel", local_snapshot)
+    monkeypatch.setattr(pncp_service, "_execute_search", unexpected_search)
+
+    result = await pncp_service.search_licitacoes_construction("20260801", "20260803", modalidade=4)
+
+    assert result["status"] == "sucesso_local"
+    assert result["metadados"]["origem"] == "banco_local"
+    assert calls == 0
+
+
+@pytest.mark.asyncio
+async def test_atualizacao_forcada_ignora_snapshot_local(monkeypatch):
+    local_calls = 0
+
+    async def local_snapshot(**_):
+        nonlocal local_calls
+        local_calls += 1
+        return {
+            "status": "sucesso_local",
+            "mensagem": "Dados locais",
+            "total_encontradas": 0,
+            "dados": [],
+            "metadados": {"origem": "banco_local", "parcial": False},
+        }
+
+    async def successful_search(*args):
+        return [], ExecucaoBusca(origem="PNCP")
+
+    monkeypatch.setattr(pncp_service, "_resultado_local_disponivel", local_snapshot)
+    monkeypatch.setattr(pncp_service, "_execute_search", successful_search)
+
+    result = await pncp_service.search_licitacoes_construction(
+        "20260801",
+        "20260803",
+        modalidade=4,
+        forcar_atualizacao=True,
+    )
+
+    assert result["status"] == "sucesso_vazio"
+    assert local_calls == 0
 
 
 @pytest.mark.asyncio
@@ -127,13 +192,15 @@ async def test_timeout_total_retorna_fallback_e_registra_falha(monkeypatch, isol
 
     monkeypatch.setattr(pncp_service, "_execute_search", slow_search)
     monkeypatch.setattr(settings, "pncp_timeout_seconds", 0.01)
+    monkeypatch.setattr(settings, "pncp_request_interval_seconds", 0.0)
+    monkeypatch.setattr(settings, "pncp_rate_limit_retry_seconds", 0.001)
 
     result = await pncp_service.search_licitacoes_construction("20260801", "20260803", modalidade=4, max_paginas=1)
 
     assert result["status"] == "sucesso_offline_db"
     assert result["metadados"]["origem"] == "banco_local"
     assert result["metadados"]["paginas_com_erro"] == 1
-    assert "excedeu 0.01 segundos" in result["mensagem"]
+    assert "excedeu 0.011 segundos" in result["mensagem"]
     assert isolated_pncp_state.consecutive_failures == 1
 
 

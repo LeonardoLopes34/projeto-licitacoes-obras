@@ -1,6 +1,7 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from backend.config import settings
 from backend.database import Base
 from backend.schemas import ResultadoExigencias
 from backend.services import edital_analysis_repository as repository
@@ -34,12 +35,13 @@ def test_resumo_para_card_nao_processa_novos_documentos(monkeypatch):
     Base.metadata.create_all(engine)
     session_factory = sessionmaker(bind=engine)
     monkeypatch.setattr(repository, "SessionLocal", session_factory)
+    # O resumo dos cards só considera a versão atual do analisador.
     result = ResultadoExigencias(
         status="sucesso_parcial",
         mensagem="Resultado parcial.",
         total_exigencias=2,
         categorias={"qualificacao_tecnica": 2},
-        analisador_versao="ocr-edital-v1",
+        analisador_versao=settings.edital_analyzer_version,
     )
     repository.salvar_analise("123:2026:2", "c" * 64, result)
 

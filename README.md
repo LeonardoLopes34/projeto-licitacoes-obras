@@ -15,16 +15,22 @@ As consultas ao PNCP são paginadas por modalidade e preservam metadados de
 execução (`parcial`, páginas consultadas, páginas com erro e origem dos dados).
 A API devolve no máximo 15 cards por resposta, com um cursor opaco assinado em
 `paginacao.proximo_cursor`; o frontend usa esse cursor para navegar entre as
-páginas sem carregar todos os cards no navegador.
+páginas sem carregar todos os cards no navegador. Quando há continuidade, a
+primeira resposta persiste um snapshot temporário: páginas seguintes usam a
+mesma lista mesmo se o PNCP mudar. Cursor expirado retorna `410`; basta
+atualizar a consulta para reiniciar mantendo os filtros.
 A busca padrão começa nas licitações publicadas no dia atual, mas o período
-pode ser alterado pelos filtros de data. O PNCP é
-sempre consultado primeiro; somente uma falha de transporte, HTTP, timeout ou
-resposta parcial com erro permite retornar o último resultado em cache ou os
-registros salvos no banco. Uma resposta válida sem resultados permanece vazia.
+pode ser alterado pelos filtros de data. Para evitar tráfego repetido e tornar
+os filtros imediatos, o sistema usa primeiro o conjunto local já salvo para o
+período. Ele consulta o PNCP somente quando ainda não há dados locais para as
+datas escolhidas ou quando a pessoa seleciona **Atualizar Dados**. Uma falha
+remota pode retornar o último cache ou os registros locais compatíveis.
 
 Para evitar que a indisponibilidade do PNCP deixe a tela aguardando, cada
-página consultada tem um limite configurável de 3 segundos
-(`PNCP_TIMEOUT_SECONDS`). Quando a busca solicita todas as modalidades, elas são
+requisição tem um limite configurável de 8 segundos
+(`PNCP_TIMEOUT_SECONDS`). Consultas de documentos fazem até duas tentativas
+para absorver timeouts ou falhas transitórias de conexão, dentro do orçamento
+total do endpoint. Quando a busca solicita todas as modalidades, elas são
 consultadas em paralelo e uma modalidade lenta não bloqueia as demais. Ao atingir esse limite, o sistema consulta o
 banco local. Após três falhas consecutivas, um circuit breaker bloqueia
 novas chamadas ao PNCP por 30 segundos e usa o banco diretamente; depois disso,
@@ -39,6 +45,34 @@ permite uma tentativa de recuperação.
 
 O backend usa SQLite local por padrão (`licitacoes_obras.db`) e aceita
 PostgreSQL por meio de `DATABASE_URL`.
+
+### Indexação assistida de editais (Spec 015)
+
+A indexação vetorial nasce desativada. Para ativá-la localmente, inicie o
+PostgreSQL com pgvector em `localhost:55432`, configure a URL PostgreSQL e
+aplique as migrações:
+
+```powershell
+docker compose up -d postgres
+$env:DATABASE_URL = "postgresql+psycopg2://licitacoes:senha-local@127.0.0.1:55432/licitacoes_obras"
+alembic upgrade head
+```
+
+Depois, defina no `.env` local `VECTOR_INDEXING_ENABLED=true` e
+`OPENAI_API_KEY`. A primeira configuração usa `text-embedding-3-small` com
+1.536 dimensões e `gpt-5-mini` para a análise estruturada. A chave não deve
+ser incluída em código, fixtures ou logs.
+
+Ao abrir uma contratação sem análise assistida compatível, o sistema agenda um
+job persistente e mantém o resultado local como fallback. PDFs e ZIPs brutos
+continuam somente em memória; o banco guarda textos derivados, vetores,
+proveniência e métricas. A retenção inativa derivados quando a contratação
+expira e remove versões inativas após `VECTOR_INDEX_RETENTION_DAYS`. Não há
+chat, agente ou rota pública de busca semântica nesta entrega.
+
+O CI valida Python 3.12 e 3.14. O frontend requer Node 22 e npm 11, conforme
+registrado em `frontend/package.json`; `frontend/package-lock.json` e
+`requirements.lock` são as resoluções reproduzíveis validadas.
 
 Em produção, o banco deve ser atualizado exclusivamente com `alembic upgrade
 head`. O bootstrap automático de tabelas fica restrito aos ambientes de
@@ -67,7 +101,7 @@ Backend:
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -r requirements-dev.txt
+pip install -r requirements.lock
 alembic upgrade head
 uvicorn backend.main:app --reload
 ```
@@ -98,7 +132,7 @@ npm run build
 ## Rotas principais
 
 - `GET /health`: estado operacional da aplicação e do Tesseract, sem expor configuração sensível.
-- `GET /api/v1/obras`: consulta licitações por período, modalidade, UF e paginação. Aceita `tamanho_resultado` (1 a 15) e o `cursor` retornado pela resposta. O período padrão é o dia atual.
+- `GET /api/v1/obras`: consulta licitações por período, modalidade, UF e paginação. Aceita a expressão `termo` antes de paginar (por exemplo, `pavimentação -drenagem` ou `-"registro de preços"`), ou as listas repetidas `termos_inclusao` e `termos_exclusao` — as duas formas não podem ser combinadas. `escopo_busca` aceita `objeto_itens` (padrão), `objeto_itens_orgao` e `todos_metadados`; `modo_inclusao` aceita `qualquer` (padrão) ou `todos`. Os metadados contêm totais, auditoria dos termos, valores conhecidos e agregados do conjunto filtrado; valores ausentes não entram no volume estimado.
 - `GET /api/v1/obras/{cnpj}/{ano}/{sequencial}/documentos`: consulta, sob demanda, os documentos publicados de uma contratação. Em falha do PNCP, pode retornar o último snapshot persistido com `origem=cache_persistente` e `desatualizado=true`.
 - `GET /api/v1/obras/{cnpj}/{ano}/{sequencial}/exigencias`: analisa, sob demanda, exigências de habilitação encontradas no edital. Use `?forcar=true` para reprocessar ignorando um resultado compatível em cache. Quando o PNCP estiver indisponível, a última análise compatível pode ser exibida como desatualizada.
 - `GET /admin/database/stats`: estatísticas do banco, exige `X-Admin-Key`.
@@ -120,7 +154,11 @@ uma empresa, não substitui a leitura do edital e não constitui parecer jurídi
 Cada item também recebe uma descrição semântica curta para leitura rápida no
 card. Essa descrição é gerada por regras locais e conservadoras, sem copiar a
 redação do PDF; o trecho original continua disponível em “Ver trecho original”
-para conferência.
+para conferência. Antes de criar o card, um filtro documental exige uma ação de
+apresentação/comprovação e um tipo documental identificável. Menções a notas
+fiscais, visita, fiscalização, períodos, servidores e execução contratual são
+descartadas como contexto operacional. Ocorrências repetidas ou variações
+pequenas do OCR são agrupadas por conceito documental.
 
 Os códigos de modalidade usados pelo domínio são `4` (Concorrência), `6`
 (Pregão), `8` (Dispensa) e `0` (todas as modalidades suportadas).
@@ -131,3 +169,16 @@ normalmente ao receber `204 No Content`. Respostas `429` e erros temporários
 recebem retry controlado; outros erros HTTP são contabilizados nos metadados. O
 limite pode ser ajustado por `PNCP_MAX_PAGINAS` ou pelo parâmetro `max_paginas` da
 API, respeitando o limite de 50 registros por página do PNCP.
+
+### Busca textual e tipo da contratação
+
+A busca textual é interpretada pela aplicação, não pelo operador negativo do
+PNCP. Ela ignora caixa, acentos e pontuação, respeita palavras/frases inteiras
+e pesquisa objeto e descrições de itens por padrão. Órgão, município,
+modalidade, fonte e documentos só entram quando o escopo correspondente é
+selecionado. Cada resposta filtrada inclui os termos/campos que justificaram a
+inclusão e as contagens de exclusões nos metadados.
+
+Os cards mostram **Tipo** usando `tipo_contratacao`. Quando o PNCP oferece os
+campos atômicos, a API também expõe `modalidade`, `criterio_julgamento`,
+`tipo_instrumento` e `tipo_contratacao_origem` para conferência no detalhe.

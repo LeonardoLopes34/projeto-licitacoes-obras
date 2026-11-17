@@ -213,10 +213,98 @@ async def test_timeout_do_consumidor_nao_cancela_consulta_compartilhada(monkeypa
     assert result["total"] == 1
 
 
+@pytest.mark.asyncio
+async def test_timeout_transitorio_tenta_novamente_e_retorna_documentos(monkeypatch):
+    monkeypatch.setattr(pncp_service, "_DOCUMENTOS_CACHE", TTLCache(maxsize=4, ttl=60))
+    monkeypatch.setattr(pncp_service, "_DOCUMENTOS_INFLIGHT", {})
+    monkeypatch.setattr(pncp_service, "_PNCP_HTTP_CLIENT", None)
+    monkeypatch.setattr(pncp_service, "_PNCP_HTTP_CLIENT_LOOP", None)
+    monkeypatch.setattr(pncp_service, "_retry_delay", lambda *_args: 0.0)
+    calls = {"total": 0}
+
+    class FlakyClient:
+        async def get(self, url, **kwargs):
+            calls["total"] += 1
+            if calls["total"] == 1:
+                raise httpx.ReadTimeout("timeout transitório")
+            return FakeResponse(
+                200,
+                {"documentos": [{"sequencialDocumento": 1, "titulo": "Edital"}]},
+            )
+
+    monkeypatch.setattr(pncp_service.httpx, "AsyncClient", lambda **kwargs: FlakyClient())
+
+    result = await pncp_service.buscar_documentos_pncp("12345678901234", 2026, 7)
+
+    assert calls["total"] == 2
+    assert result["status"] == "sucesso_real"
+    assert result["documentos"][0]["titulo"] == "Edital"
+
+
 def test_timeout_do_endpoint_documentos_comporta_retry(monkeypatch):
     monkeypatch.setattr(settings, "pncp_timeout_seconds", 3.0)
 
     assert pncp_service.documentos_request_timeout_seconds() == 7.5
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error_type", [httpx.ReadTimeout, httpx.ConnectError])
+async def test_documentos_repetem_timeout_ou_conexao_e_sucesso(monkeypatch, error_type):
+    calls = 0
+    sleeps = []
+
+    class FlakyClient:
+        async def get(self, url, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise error_type("falha transitória simulada")
+            return FakeResponse(
+                200,
+                {"documentos": [{"sequencialDocumento": 1, "titulo": "Edital"}]},
+            )
+
+    async def fake_obter_cliente():
+        return FlakyClient()
+
+    async def fake_sleep(delay):
+        sleeps.append(delay)
+
+    monkeypatch.setattr(pncp_service, "obter_cliente_pncp", fake_obter_cliente)
+    monkeypatch.setattr(pncp_service.asyncio, "sleep", fake_sleep)
+
+    result = await pncp_service._consultar_documentos_pncp(
+        "12345678901234", 2026, 7, cache_key="12345678901234:2026:7"
+    )
+
+    assert calls == 2
+    assert sleeps == [0.5]
+    assert result["status"] == "sucesso_real"
+    assert result["total"] == 1
+
+
+@pytest.mark.asyncio
+async def test_documentos_nao_iniciam_retry_sem_orcamento(monkeypatch):
+    calls = 0
+
+    class FailedClient:
+        async def get(self, url, **kwargs):
+            nonlocal calls
+            calls += 1
+            raise httpx.ReadTimeout("timeout simulado")
+
+    async def fake_obter_cliente():
+        return FailedClient()
+
+    monkeypatch.setattr(pncp_service, "obter_cliente_pncp", fake_obter_cliente)
+    monkeypatch.setattr(pncp_service, "documentos_request_timeout_seconds", lambda: 0.1)
+
+    with pytest.raises(pncp_service.PNCPConnectionError, match="Timeout"):
+        await pncp_service._consultar_documentos_pncp(
+            "12345678901234", 2026, 7, cache_key="12345678901234:2026:7"
+        )
+
+    assert calls == 1
 
 
 @pytest.mark.asyncio

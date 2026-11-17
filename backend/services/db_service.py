@@ -110,6 +110,17 @@ def _parse_int(value: Any) -> int | None:
         raise ValueError(f"valor inteiro inválido: {value}") from exc
 
 
+def _parse_tipo_contratacao_origem(value: Any) -> dict[str, str] | None:
+    if not isinstance(value, dict):
+        return None
+    origem = {
+        str(key): str(raw_value)
+        for key, raw_value in value.items()
+        if key is not None and raw_value is not None and str(raw_value).strip()
+    }
+    return origem or None
+
+
 def _row_from_item(item: dict[str, Any]) -> dict[str, Any]:
     id_pncp = str(item.get("id_pncp") or item.get("numero_controle_pncp") or "").strip()
     if not id_pncp:
@@ -137,6 +148,10 @@ def _row_from_item(item: dict[str, Any]) -> dict[str, Any]:
         "data_publicacao": data_publicacao,
         "modalidade": item.get("modalidade"),
         "modalidade_codigo": modalidade_codigo,
+        "criterio_julgamento": item.get("criterio_julgamento"),
+        "tipo_instrumento": item.get("tipo_instrumento"),
+        "tipo_contratacao": item.get("tipo_contratacao"),
+        "tipo_contratacao_origem": _parse_tipo_contratacao_origem(item.get("tipo_contratacao_origem")),
         "link_pncp": item.get("link_pncp"),
         "fonte": "PNCP_REAL",
         "status_classificacao": item.get("status_classificacao") or "aprovado",
@@ -186,8 +201,22 @@ def save_obras_batch(db: Session, obras: list[dict[str, Any]]) -> int:
 def cleanup_expired_obras(db: Session, max_age_days: int = 2) -> int:
     cutoff_date = utc_now() - timedelta(days=max_age_days)
     try:
+        expired_keys = [
+            f"{cnpj}:{ano}:{sequencial}"
+            for cnpj, ano, sequencial in db.execute(
+                select(ObraModel.cnpj, ObraModel.ano, ObraModel.sequencial).where(ObraModel.created_at < cutoff_date)
+            )
+            if cnpj and ano and sequencial
+        ]
         result = db.execute(delete(ObraModel).where(ObraModel.created_at < cutoff_date))
         db.commit()
+        # Os derivados não incluem o PDF bruto, mas ainda carregam texto e
+        # vetores. A remoção da contratação os torna inelegíveis imediatamente.
+        if expired_keys:
+            from backend.services.vector_index_repository import inactivate_contract
+
+            for contratacao_chave in expired_keys:
+                inactivate_contract(contratacao_chave)
         deleted = result.rowcount or 0
         if deleted:
             logger.info("Excluídas %s obras expiradas", deleted)
@@ -211,6 +240,7 @@ def get_obras_from_db(
     data_inicial: str | None = None,
     data_final: str | None = None,
     limit: int = 300,
+    include_payload: bool = False,
 ) -> list[dict[str, Any]]:
     clauses = list(_real_records_clause())
     if uf and uf.upper() != "TODOS":
@@ -232,7 +262,7 @@ def get_obras_from_db(
         .limit(max(1, min(limit, 1000)))
     )
     try:
-        return [record.to_dict() for record in db.scalars(stmt).all()]
+        return [record.to_dict(include_payload=include_payload) for record in db.scalars(stmt).all()]
     except SQLAlchemyError as exc:
         raise DatabaseServiceError("Falha ao consultar obras locais") from exc
 

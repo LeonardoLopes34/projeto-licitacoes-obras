@@ -174,6 +174,7 @@ async def test_falha_de_download_nao_quebra_metricas_de_paginacao():
 
 @pytest.mark.asyncio
 async def test_falha_de_ocr_devolve_resultado_parcial_sem_inventar_item(monkeypatch):
+    monkeypatch.setattr(edital_analysis_service.settings, "edital_ocr_enabled", True)
     content = b"%PDF-1.7 image"
     downloaded = DownloadedPdf(
         content=content,
@@ -209,6 +210,49 @@ async def test_falha_de_ocr_devolve_resultado_parcial_sem_inventar_item(monkeypa
     assert result.status == "sucesso_parcial"
     assert result.total_exigencias == 0
     assert result.documentos_analisados[0].status == "analise_parcial"
+
+
+@pytest.mark.asyncio
+async def test_ocr_desativado_nao_renderiza_pagina_nem_chama_tesseract(monkeypatch):
+    content = b"%PDF-1.7 image without text layer"
+    downloaded = DownloadedPdf(
+        content=content,
+        sha256=hashlib.sha256(content).hexdigest(),
+        url_final="https://pncp.gov.br/anexo-digitalizado.pdf",
+        content_type="application/pdf",
+    )
+
+    async def fake_download(_url):
+        return downloaded
+
+    def unexpected_renderer(*args, **kwargs):
+        raise AssertionError("O renderizador não deve ser chamado quando OCR está desativado.")
+
+    class UnexpectedOcr:
+        def reconhecer(self, *args, **kwargs):
+            raise AssertionError("O Tesseract não deve ser chamado quando OCR está desativado.")
+
+    monkeypatch.setattr(edital_analysis_service.settings, "edital_ocr_enabled", False)
+    monkeypatch.setattr(
+        edital_analysis_service,
+        "extrair_texto_pdf",
+        lambda _content: PdfTextResult(
+            paginas=[PageText(1, "", 0, 0.0, "sem_texto")],
+            parser="fixture",
+        ),
+    )
+    monkeypatch.setattr(edital_analysis_service, "renderizar_pagina_para_ocr", unexpected_renderer)
+
+    result = await EditalAnalysisService(
+        downloader=fake_download,
+        ocr_service=UnexpectedOcr(),
+    ).analisar_documentos(
+        [{"sequencial_documento": 1, "titulo": "Edital", "url": downloaded.url_final}],
+        contratacao_key="123:2026:ocr-desativado",
+    )
+
+    assert result.documentos_analisados[0].paginas == 1
+    assert result.documentos_analisados[0].paginas_com_ocr == 0
 
 
 @pytest.mark.asyncio
@@ -339,3 +383,19 @@ async def test_interrompe_zip_acima_do_limite_agregado_de_paginas(monkeypatch):
     assert result.status == "erro"
     assert result.documentos_analisados[0].status == "erro"
     assert "limite total de páginas" in result.documentos_analisados[0].mensagem
+
+
+def test_identifica_documento_concreto_exigido_no_trecho():
+    from backend.services.edital_analysis_service import _identificar_documentos, normalizar_texto
+
+    trecho = normalizar_texto(
+        "O licitante deverá comprovar ter executado serviço similar, mediante apresentação de atestado(s) "
+        "de capacidade técnico-operacional, e de declaração de compromisso de vinculação do responsável técnico."
+    )
+
+    nomes = [nome for _, nome, _ in _identificar_documentos("qualificacao_tecnica", trecho)]
+
+    # O atestado operacional vence o genérico da mesma família; o vínculo é outro documento.
+    assert nomes == ["Atestado de capacidade técnico-operacional", "Comprovação de vínculo do responsável técnico"]
+    assert _identificar_documentos("regularidade_fiscal_social_trabalhista", normalizar_texto("Certificado do FGTS"))[0][0] == "regularidade_fgts"
+    assert _identificar_documentos("qualificacao_tecnica", normalizar_texto("caução de 5%")) == []

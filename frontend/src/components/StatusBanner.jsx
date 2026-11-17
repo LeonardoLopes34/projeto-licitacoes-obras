@@ -6,6 +6,7 @@ export default function StatusBanner({ statusInfo }) {
   const metadata = statusInfo.metadados || statusInfo;
   const isError = statusInfo.status === "erro";
   const isOffline = metadata.origem === "banco_local";
+  const isStoredSnapshot = isOffline && statusInfo.status === "sucesso_local";
   const isCache = metadata.origem === "cache";
   const isPartial = Boolean(metadata.parcial);
 
@@ -14,6 +15,8 @@ export default function StatusBanner({ statusInfo }) {
   const tone = isError ? "error" : isOffline || isCache || isPartial ? "warning" : "info";
   const message = isError
       ? statusInfo.mensagem
+      : isStoredSnapshot
+        ? statusInfo.mensagem || "Exibindo dados já armazenados. Clique em Atualizar Dados para consultar o PNCP."
       : isOffline || isCache
         ? "Exibindo dados salvos localmente; o PNCP não respondeu agora."
         : isPartial
@@ -34,7 +37,7 @@ export default function StatusBanner({ statusInfo }) {
       }`}
     >
       <strong className="font-semibold">
-        {isError ? "Não foi possível concluir a busca." : isOffline || isCache ? "Modo offline" : isPartial ? "Busca parcial" : "Status da busca"}
+        {isError ? "Não foi possível concluir a busca." : isStoredSnapshot ? "Dados locais" : isOffline || isCache ? "Modo offline" : isPartial ? "Busca parcial" : "Status da busca"}
       </strong>{" "}
       <span>{message}</span>
     </div>

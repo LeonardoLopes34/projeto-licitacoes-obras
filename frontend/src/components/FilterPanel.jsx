@@ -13,12 +13,23 @@ export default function FilterPanel({
   setModalidade,
   sortBy = "data_desc",
   setSortBy,
+  incluirPavimentacao = true,
+  setIncluirPavimentacao,
   searchTerm,
   setSearchTerm,
+  termosInclusao = [],
+  termosExclusao = [],
+  escopoBusca = "objeto_itens",
+  setEscopoBusca,
+  onRemoveTerm,
   onResetFilters,
   activeFiltersCount = 0,
 }) {
   const searchInputRef = useRef(null);
+  const chipsDeBusca = [
+    ...termosInclusao.map((termo, indice) => ({ termo, tipo: "inclusao", indice })),
+    ...termosExclusao.map((termo, indice) => ({ termo, tipo: "exclusao", indice })),
+  ].filter(({ termo }) => typeof termo === "string" && termo.trim());
 
   return (
     <section
@@ -173,10 +184,29 @@ export default function FilterPanel({
         Escolha o período de publicação que deseja consultar. O padrão inicial é o dia atual.
       </p>
 
-      {/* SEÇÃO 2: CAIXA DE PESQUISA EM TEMPO REAL */}
+      <label
+        htmlFor="filtro-incluir-pavimentacao"
+        className="flex w-fit cursor-pointer items-center gap-2.5 rounded-lg px-1 py-1 text-sm focus-within:outline-2 focus-within:outline-amber-400 focus-within:outline-offset-2"
+        style={{ color: "var(--text-secondary)" }}
+      >
+        <input
+          id="filtro-incluir-pavimentacao"
+          type="checkbox"
+          checked={incluirPavimentacao}
+          onChange={(event) => setIncluirPavimentacao?.(event.target.checked)}
+          className="h-4 w-4 cursor-pointer accent-amber-500"
+        />
+        <span>Incluir obras de pavimentação</span>
+      </label>
+
+      {/* SEÇÃO 2: EXPRESSÃO DE BUSCA */}
       <div className="pt-2 border-t" style={{ borderColor: "var(--border-subtle)" }}>
-        <label htmlFor="filtro-busca-texto" className="sr-only">
-          Filtrar resultados por cidade, UF, órgão, objeto ou modalidade
+        <label
+          htmlFor="filtro-busca-texto"
+          className="block text-[11px] font-bold uppercase tracking-wider mb-2"
+          style={{ color: "var(--text-dim)" }}
+        >
+          Busca textual
         </label>
         <div className="relative flex items-center">
           <Search
@@ -187,9 +217,10 @@ export default function FilterPanel({
             ref={searchInputRef}
             id="filtro-busca-texto"
             type="text"
-            placeholder="Filtrar por cidade, UF, órgão, objeto ou modalidade... (Pressione '/' ou 'Ctrl+K' para buscar)"
+            placeholder={'Ex.: pavimentação -drenagem ou -"registro de preços"'}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
+            aria-describedby="filtro-busca-ajuda"
             className="theme-input w-full border rounded-xl pl-10 pr-24 py-2.5 min-h-11 text-sm focus-visible:outline-2 focus-visible:outline-amber-400 focus-visible:outline-offset-2 transition"
           />
 
@@ -220,6 +251,74 @@ export default function FilterPanel({
               </kbd>
             )}
           </div>
+        </div>
+
+        <p id="filtro-busca-ajuda" className="mt-2 text-xs" style={{ color: "var(--text-muted)" }}>
+          Use <strong>-</strong> para excluir termos e aspas para frases. Por padrão, a busca considera objeto e itens.
+        </p>
+
+        <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label
+              htmlFor="filtro-escopo-busca"
+              className="block text-[11px] font-bold uppercase tracking-wider mb-2"
+              style={{ color: "var(--text-dim)" }}
+            >
+              Escopo da busca
+            </label>
+            <select
+              id="filtro-escopo-busca"
+              value={escopoBusca}
+              onChange={(event) => setEscopoBusca?.(event.target.value)}
+              className="theme-input w-full border rounded-xl px-3.5 py-2.5 min-h-11 text-sm focus-visible:outline-2 focus-visible:outline-amber-400 focus-visible:outline-offset-2 transition cursor-pointer"
+            >
+              <option value="objeto_itens">Objeto e itens</option>
+              <option value="objeto_itens_orgao">Objeto, itens e órgão</option>
+              <option value="todos_metadados">Todos os metadados disponíveis</option>
+            </select>
+          </div>
+
+          {chipsDeBusca.length > 0 && (
+            <div aria-live="polite" aria-label="Termos interpretados da busca">
+              <span
+                className="block text-[11px] font-bold uppercase tracking-wider mb-2"
+                style={{ color: "var(--text-dim)" }}
+              >
+                Termos interpretados
+              </span>
+              <div className="flex flex-wrap gap-2">
+                {chipsDeBusca.map((chip) => {
+                  const eExclusao = chip.tipo === "exclusao";
+                  const rotulo = `${eExclusao ? "Excluir" : "Incluir"}: ${chip.termo}`;
+                  return (
+                    <span
+                      key={`${chip.tipo}-${chip.indice}-${chip.termo}`}
+                      className="inline-flex max-w-full items-center gap-1 rounded-full border py-1 pl-2.5 pr-1 text-xs"
+                      style={{
+                        backgroundColor: eExclusao ? "var(--badge-mod-bg)" : "var(--badge-loc-bg)",
+                        borderColor: eExclusao ? "var(--badge-mod-border)" : "var(--badge-loc-border)",
+                        color: eExclusao ? "var(--badge-mod-text)" : "var(--badge-loc-text)",
+                      }}
+                    >
+                      <span className="font-semibold">{eExclusao ? "Excluir" : "Incluir"}</span>
+                      <span className="max-w-48 truncate" title={chip.termo}>{chip.termo}</span>
+                      {onRemoveTerm && (
+                        <button
+                          type="button"
+                          onClick={() => onRemoveTerm(chip)}
+                          aria-label={`Remover ${rotulo}`}
+                          title={`Remover ${rotulo}`}
+                          className="rounded-full p-1 hover:bg-black/10 focus-visible:outline-2 focus-visible:outline-amber-400"
+                        >
+                          <X className="h-3 w-3" aria-hidden="true" />
+                        </button>
+                      )}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </section>

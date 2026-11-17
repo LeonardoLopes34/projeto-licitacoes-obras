@@ -20,6 +20,9 @@
 | 010 | [Qualidade geral e testes](./010-qualidade-e-testes/) | 5 — Fechamento | Recomendado antes de release estável |
 | 011 | [Documentos PNCP](./011-documentos-pncp/) | 3 — Funcionalidade | Não |
 | 012 | [Análise de exigências por PDF/OCR](./012-analise-exigencias-ocr/) | 3 — Funcionalidade | Não |
+| 013 | [Confiabilidade e melhorias após auditoria](./013-confiabilidade-pos-auditoria/) | 6 — Evolução de confiabilidade | Recomendado antes de release estável; priorizar omissões na análise |
+| 014 | [Busca PNCP, palavras excluídas e cards](./014-busca-pncp-exclusoes-e-cards/) | 3 — Qualidade funcional | Não (recomendado antes da próxima evolução do filtro) |
+| 015 | [Indexação vetorial e análise assistida de editais](./015-indexacao-vetorial-editais/) | 6 — Evolução de dados, análise assistida e recuperação semântica | Não nesta etapa; requer PostgreSQL/pgvector, OpenAI e validação antes de ativação |
 
 ## Formato de requisito (EARS)
 
@@ -38,6 +41,9 @@
 6. **Higiene e organização final** — conclusão da spec 006, limpeza de legados (spec 009)
 7. **Filtro de obras** (melhoria orientada a dados) — spec 008
 8. **Qualidade geral consolidada** — fechamento da spec 010 (lint, README, whitespace)
+9. **Melhorias da auditoria de 08/09/2026** — spec 013: extração/cache, execução e banco, paginação/interface, CI e aceite. Plano documental; implementação pendente.
+10. **Busca PNCP e enriquecimento dos cards** — spec 014: implementada e coberta por regressões locais; a validação PNCP externa limitada continua como verificação operacional opcional.
+11. **Indexação vetorial e análise assistida de editais** — spec 015: plano documental para PostgreSQL/pgvector, embeddings e análise estruturada pela OpenAI, projetando documentos exigidos para os cards atuais. Agente conversacional, chat e busca pública permanecem fora desta fase.
 
 ## Definition of Done (aplicável a toda spec)
 

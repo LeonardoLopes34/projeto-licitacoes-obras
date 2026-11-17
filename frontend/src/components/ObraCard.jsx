@@ -1,8 +1,39 @@
-import React from "react";
-import { MapPin, ExternalLink, Calendar, Tag } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { MapPin, ExternalLink, Calendar } from "lucide-react";
+import { buscarTipoContratacao } from "../api";
 
 export default function ObraCard({ obra, analiseExigencias, onSelect, itemKey = "obra-sem-id" }) {
   const cardId = obra.id_pncp || obra.numero_controle_pncp || itemKey;
+  const [tipoEnriquecido, setTipoEnriquecido] = useState(null);
+
+  useEffect(() => {
+    const { cnpj, ano, sequencial } = obra;
+    if (!cnpj || !ano || !sequencial || obra.criterio_julgamento) {
+      setTipoEnriquecido(null);
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    buscarTipoContratacao({
+      cnpj,
+      ano,
+      sequencial,
+      modalidade: obra.modalidade,
+      tipoInstrumento: obra.tipo_instrumento,
+      signal: controller.signal,
+    })
+      .then((data) => {
+        if (!controller.signal.aborted && data?.tipo_contratacao) {
+          setTipoEnriquecido(data);
+        }
+      })
+      .catch(() => {
+        // O card mantém o texto já publicado na listagem quando o PNCP
+        // estiver indisponível para a consulta complementar.
+      });
+
+    return () => controller.abort();
+  }, [obra.ano, obra.cnpj, obra.criterio_julgamento, obra.modalidade, obra.sequencial, obra.tipo_instrumento]);
 
   const formatDate = (dateStr) => {
     if (!dateStr) return "Não informada";
@@ -23,6 +54,9 @@ export default function ObraCard({ obra, analiseExigencias, onSelect, itemKey = 
   const valorFormatado = Number.isFinite(valorNumerico)
     ? `R$ ${valorNumerico.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     : "Não informado";
+  const tipoContratacao = String(
+    tipoEnriquecido?.tipo_contratacao || obra.tipo_contratacao || obra.modalidade || "",
+  ).trim() || "Tipo não informado";
 
   return (
     <article
@@ -30,7 +64,7 @@ export default function ObraCard({ obra, analiseExigencias, onSelect, itemKey = 
       className="theme-card theme-card-hover border rounded-2xl p-5 flex flex-col justify-between transition-all duration-200 group"
     >
       <div className="space-y-3">
-        {/* Badge de Localização + Modalidade */}
+        {/* Localização e tipo: o tipo substitui o antigo selo amarelo. */}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span
             className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-lg border transition-colors"
@@ -48,19 +82,22 @@ export default function ObraCard({ obra, analiseExigencias, onSelect, itemKey = 
             </span>
           </span>
 
-          {obra.modalidade && (
+          <div className="min-w-0 max-w-full text-right">
             <span
-              className="flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-md border transition-colors"
-              style={{
-                backgroundColor: "var(--badge-mod-bg)",
-                borderColor: "var(--badge-mod-border)",
-                color: "var(--badge-mod-text)",
-              }}
+              className="block text-[10px] font-bold uppercase tracking-wider"
+              style={{ color: "var(--text-dim)" }}
             >
-              <Tag className="w-3 h-3 opacity-80 shrink-0" aria-hidden="true" />
-              <span>{obra.modalidade.replace(/\s*\(\d+\)$/, "")}</span>
+              Tipo
             </span>
-          )}
+            <p
+              className="max-w-[18rem] whitespace-normal break-words text-xs font-semibold leading-snug"
+              style={{ color: "var(--text-secondary)" }}
+              title={tipoContratacao}
+              aria-label={`Tipo: ${tipoContratacao}`}
+            >
+              {tipoContratacao}
+            </p>
+          </div>
         </div>
 
         {/* Órgão / Título do Card */}
@@ -85,7 +122,7 @@ export default function ObraCard({ obra, analiseExigencias, onSelect, itemKey = 
 
         {/* Objeto */}
         <p className="text-xs line-clamp-3 leading-relaxed" style={{ color: "var(--text-muted)" }}>
-          {obra.objeto}
+          {obra.objeto || "Objeto não informado"}
         </p>
 
         <div
@@ -108,6 +145,25 @@ export default function ObraCard({ obra, analiseExigencias, onSelect, itemKey = 
           {analiseExigencias?.status === "sucesso_parcial" && <span>Análise parcial — confira as fontes no detalhe.</span>}
           {analiseExigencias?.status === "sem_documento_analisavel" && <span>Não há documento analisável disponível.</span>}
           {analiseExigencias?.status === "erro" && <span>Não foi possível analisar os anexos.</span>}
+          {!analiseExigencias?.analise_assistida && analiseExigencias?.analise_assistida_status === "indisponivel" && (
+            <span className="block mt-1">Análise assistida indisponível — o resultado local permanece disponível.</span>
+          )}
+          {analiseExigencias?.analise_assistida && (
+            <div className="mt-2 space-y-1">
+              <span className="block font-semibold" style={{ color: "var(--text-secondary)" }}>
+                Análise assistida · confira as fontes no detalhe
+              </span>
+              {Array.isArray(analiseExigencias.documentos_exigidos) && analiseExigencias.documentos_exigidos.length > 0 && (
+                <ul className="list-disc space-y-0.5 pl-4" aria-label="Documentos exigidos identificados">
+                  {analiseExigencias.documentos_exigidos.slice(0, 3).map((documento, index) => (
+                    <li key={`${documento.nome}-${index}`}>
+                      {documento.nome}{documento.estado === "incerto" ? " (revisar)" : ""}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

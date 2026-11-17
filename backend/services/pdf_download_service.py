@@ -10,6 +10,8 @@ from __future__ import annotations
 import hashlib
 import io
 import ipaddress
+import asyncio
+import logging
 import ssl
 import zipfile
 from dataclasses import dataclass
@@ -33,6 +35,10 @@ ZIP_CONTENT_TYPES: Final = {
 }
 ALLOWED_CONTENT_TYPES: Final = PDF_CONTENT_TYPES | ZIP_CONTENT_TYPES
 _ZIP_READ_CHUNK_SIZE: Final = 64 * 1024
+_RETRYABLE_DOWNLOAD_ERRORS: Final = (httpx.TimeoutException, httpx.NetworkError)
+
+
+logger = logging.getLogger(__name__)
 
 
 class PdfDownloadError(RuntimeError):
@@ -240,54 +246,94 @@ async def baixar_pdf_pncp(url: str) -> DownloadedDocument:
         "Accept": "application/pdf, application/zip, application/octet-stream",
     }
 
+    max_attempts = settings.edital_download_retries + 1
     try:
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=False, verify=_tls_verify()) as client:
-            for _redirect in range(MAX_REDIRECTS + 1):
-                async with client.stream("GET", current_url, headers=headers) as response:
-                    if response.status_code in {301, 302, 303, 307, 308}:
-                        location = response.headers.get("location")
-                        if not location:
-                            raise PdfDownloadError("O arquivo redirecionou sem informar o destino.")
-                        current_url = validar_url_documento(urljoin(current_url, location))
-                        continue
-                    if response.status_code != 200:
+            for attempt in range(max_attempts):
+                # Cada tentativa recomeça na URL original. Assim, um timeout
+                # após um ou mais redirecionamentos não reaproveita um estado
+                # parcial do servidor ou da resposta anterior.
+                attempt_url = current_url = validar_url_documento(url)
+                try:
+                    for _redirect in range(MAX_REDIRECTS + 1):
+                        async with client.stream("GET", current_url, headers=headers) as response:
+                            if response.status_code in {301, 302, 303, 307, 308}:
+                                location = response.headers.get("location")
+                                if not location:
+                                    raise PdfDownloadError("O arquivo redirecionou sem informar o destino.")
+                                current_url = validar_url_documento(urljoin(current_url, location))
+                                continue
+                            if response.status_code != 200:
+                                raise PdfDownloadError(
+                                    f"O PNCP não disponibilizou o arquivo (HTTP {response.status_code})."
+                                )
+
+                            content_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+                            if content_type not in ALLOWED_CONTENT_TYPES:
+                                raise PdfDownloadError("O arquivo informado pelo PNCP não é um PDF ou ZIP.")
+                            declared_size = _content_length(response.headers)
+                            if declared_size is not None and declared_size > settings.edital_pdf_max_bytes:
+                                raise PdfDownloadError("O arquivo excede o limite permitido para análise.")
+
+                            chunks: list[bytes] = []
+                            total = 0
+                            async for chunk in response.aiter_bytes():
+                                total += len(chunk)
+                                if total > settings.edital_pdf_max_bytes:
+                                    raise PdfDownloadError("O arquivo excede o limite permitido para análise.")
+                                chunks.append(chunk)
+                            content = b"".join(chunks)
+                            if content.startswith(b"%PDF-"):
+                                return DownloadedPdf(
+                                    content=content,
+                                    sha256=hashlib.sha256(content).hexdigest(),
+                                    url_final=current_url,
+                                    content_type=content_type,
+                                )
+                            if zipfile.is_zipfile(io.BytesIO(content)):
+                                return extrair_pdfs_zip(
+                                    content,
+                                    url_final=current_url,
+                                    content_type=content_type,
+                                )
+                            raise PdfDownloadError("O conteúdo recebido não é um PDF ou ZIP válido.")
+                except _RETRYABLE_DOWNLOAD_ERRORS as exc:
+                    if attempt >= max_attempts - 1:
+                        if isinstance(exc, httpx.TimeoutException):
+                            raise PdfDownloadError(
+                                "O download do arquivo excedeu o tempo limite após "
+                                f"{max_attempts} tentativas."
+                            ) from exc
                         raise PdfDownloadError(
-                            f"O PNCP não disponibilizou o arquivo (HTTP {response.status_code})."
-                        )
+                            "Não foi possível baixar o arquivo publicado no PNCP após "
+                            f"{max_attempts} tentativas."
+                        ) from exc
 
-                    content_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
-                    if content_type not in ALLOWED_CONTENT_TYPES:
-                        raise PdfDownloadError("O arquivo informado pelo PNCP não é um PDF ou ZIP.")
-                    declared_size = _content_length(response.headers)
-                    if declared_size is not None and declared_size > settings.edital_pdf_max_bytes:
-                        raise PdfDownloadError("O arquivo excede o limite permitido para análise.")
-
-                    chunks: list[bytes] = []
-                    total = 0
-                    async for chunk in response.aiter_bytes():
-                        total += len(chunk)
-                        if total > settings.edital_pdf_max_bytes:
-                            raise PdfDownloadError("O arquivo excede o limite permitido para análise.")
-                        chunks.append(chunk)
-                    content = b"".join(chunks)
-                    if content.startswith(b"%PDF-"):
-                        return DownloadedPdf(
-                            content=content,
-                            sha256=hashlib.sha256(content).hexdigest(),
-                            url_final=current_url,
-                            content_type=content_type,
-                        )
-                    if zipfile.is_zipfile(io.BytesIO(content)):
-                        return extrair_pdfs_zip(
-                            content,
-                            url_final=current_url,
-                            content_type=content_type,
-                        )
-                    raise PdfDownloadError("O conteúdo recebido não é um PDF ou ZIP válido.")
+                    delay = settings.edital_download_retry_delay_seconds * (2**attempt)
+                    logger.warning(
+                        "Falha transitória ao baixar arquivo do PNCP (tentativa %s/%s, URL %s): %s; "
+                        "nova tentativa em %.1fs",
+                        attempt + 1,
+                        max_attempts,
+                        attempt_url,
+                        exc,
+                        delay,
+                    )
+                    if delay > 0:
+                        await asyncio.sleep(delay)
     except PdfDownloadError:
         raise
     except httpx.TimeoutException as exc:
-        raise PdfDownloadError("O download do arquivo excedeu o tempo limite.") from exc
+        # Mantém uma mensagem segura para qualquer timeout ocorrido na
+        # inicialização/encerramento do cliente, fora da tentativa principal.
+        raise PdfDownloadError(
+            f"O download do arquivo excedeu o tempo limite após {max_attempts} tentativas."
+        ) from exc
+    except httpx.NetworkError as exc:
+        raise PdfDownloadError(
+            "Não foi possível baixar o arquivo publicado no PNCP após "
+            f"{max_attempts} tentativas."
+        ) from exc
     except httpx.HTTPError as exc:
         raise PdfDownloadError("Não foi possível baixar o arquivo publicado no PNCP.") from exc
 

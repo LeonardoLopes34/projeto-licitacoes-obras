@@ -2,6 +2,7 @@ import hashlib
 import io
 import zipfile
 
+import httpx
 import pytest
 
 from backend.services import pdf_download_service
@@ -44,7 +45,10 @@ class FakeClient:
 
     def stream(self, method, url, **kwargs):
         self.urls.append(url)
-        return self.responses.pop(0)
+        response = self.responses.pop(0)
+        if isinstance(response, BaseException):
+            raise response
+        return response
 
 
 def make_zip(entries: dict[str, bytes]) -> bytes:
@@ -88,6 +92,64 @@ async def test_baixa_pdf_com_hash_e_limite_de_stream(monkeypatch):
     assert result.content == content
     assert result.sha256 == hashlib.sha256(content).hexdigest()
     assert client.urls == ["https://pncp.gov.br/edital.pdf"]
+
+
+@pytest.mark.asyncio
+async def test_retry_timeout_transitorio_e_baixa_pdf(monkeypatch):
+    content = b"%PDF-1.7\nconteudo apos retry"
+    timeout = httpx.ReadTimeout("timeout transitório")
+    client = FakeClient(
+        [
+            timeout,
+            FakeResponse(
+                headers={"content-type": "application/pdf", "content-length": str(len(content))},
+                chunks=[content],
+            ),
+        ]
+    )
+    monkeypatch.setattr(pdf_download_service.httpx, "AsyncClient", lambda **kwargs: client)
+    monkeypatch.setattr(pdf_download_service.settings, "edital_download_retries", 1)
+    monkeypatch.setattr(pdf_download_service.settings, "edital_download_retry_delay_seconds", 0)
+
+    result = await baixar_pdf_pncp("https://pncp.gov.br/edital.pdf")
+
+    assert result.content == content
+    assert client.urls == ["https://pncp.gov.br/edital.pdf", "https://pncp.gov.br/edital.pdf"]
+
+
+@pytest.mark.asyncio
+async def test_retry_falha_de_rede_transitoria_e_baixa_zip(monkeypatch):
+    content = make_zip({"edital.pdf": b"%PDF-1.7\nconteudo zip apos retry"})
+    client = FakeClient(
+        [
+            httpx.ConnectError("conexão encerrada"),
+            FakeResponse(
+                headers={"content-type": "application/zip", "content-length": str(len(content))},
+                chunks=[content],
+            ),
+        ]
+    )
+    monkeypatch.setattr(pdf_download_service.httpx, "AsyncClient", lambda **kwargs: client)
+    monkeypatch.setattr(pdf_download_service.settings, "edital_download_retries", 1)
+    monkeypatch.setattr(pdf_download_service.settings, "edital_download_retry_delay_seconds", 0)
+
+    result = await baixar_pdf_pncp("https://pncp.gov.br/edital.zip")
+
+    assert isinstance(result, DownloadedZip)
+    assert result.pdfs[0].content == b"%PDF-1.7\nconteudo zip apos retry"
+
+
+@pytest.mark.asyncio
+async def test_timeout_final_retorna_erro_apos_todas_as_tentativas(monkeypatch):
+    client = FakeClient([httpx.ReadTimeout("timeout 1"), httpx.ReadTimeout("timeout 2")])
+    monkeypatch.setattr(pdf_download_service.httpx, "AsyncClient", lambda **kwargs: client)
+    monkeypatch.setattr(pdf_download_service.settings, "edital_download_retries", 1)
+    monkeypatch.setattr(pdf_download_service.settings, "edital_download_retry_delay_seconds", 0)
+
+    with pytest.raises(PdfDownloadError, match="tempo limite após 2 tentativas"):
+        await baixar_pdf_pncp("https://pncp.gov.br/edital.pdf")
+
+    assert len(client.urls) == 2
 
 
 @pytest.mark.asyncio

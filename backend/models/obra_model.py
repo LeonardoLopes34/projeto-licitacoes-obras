@@ -52,6 +52,10 @@ class ObraModel(Base):
     data_publicacao: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     modalidade: Mapped[str | None] = mapped_column(String(100), nullable=True)
     modalidade_codigo: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    criterio_julgamento: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    tipo_instrumento: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    tipo_contratacao: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    tipo_contratacao_origem: Mapped[dict[str, str] | None] = mapped_column(JSON, nullable=True)
     link_pncp: Mapped[str | None] = mapped_column(Text, nullable=True)
     fonte: Mapped[str] = mapped_column(String(50), default="PNCP_REAL", nullable=False)
 
@@ -75,6 +79,10 @@ class ObraModel(Base):
             "data_publicacao": self.data_publicacao.isoformat() if self.data_publicacao else None,
             "modalidade": self.modalidade,
             "modalidade_codigo": self.modalidade_codigo,
+            "criterio_julgamento": self.criterio_julgamento,
+            "tipo_instrumento": self.tipo_instrumento,
+            "tipo_contratacao": self.tipo_contratacao,
+            "tipo_contratacao_origem": self.tipo_contratacao_origem,
             "link_pncp": self.link_pncp,
             "fonte": self.fonte,
             "status_classificacao": self.status_classificacao,

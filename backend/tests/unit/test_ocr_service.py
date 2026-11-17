@@ -95,3 +95,80 @@ def test_tesseract_marca_texto_de_baixa_confianca_para_revisao(monkeypatch):
 
     assert result.status == "baixa_qualidade"
     assert result.confianca == 0.31
+
+
+class _FakeImage:
+    def save(self, buffer, format, quality):
+        buffer.write(b"jpeg")
+
+
+class _FallbackOcr:
+    language = "por"
+
+    def reconhecer(self, image, pagina):
+        from backend.services.ocr_service import OcrPageResult
+
+        return OcrPageResult(pagina=pagina, texto="tesseract", confianca=0.5, idioma="por", duracao_ms=1, status="sucesso")
+
+
+def _openai_response(payload, status_code=200):
+    import httpx
+
+    return httpx.Response(status_code, json=payload, request=httpx.Request("POST", "https://api.openai.com/v1/responses"))
+
+
+def test_ocr_openai_transcreve_pagina_com_imagem(monkeypatch):
+    import httpx
+
+    from backend.services.ocr_service import OpenAIVisionOcrService
+
+    captured = {}
+
+    def fake_post(url, **kwargs):
+        captured["url"] = url
+        captured["json"] = kwargs["json"]
+        return _openai_response(
+            {"status": "completed", "output": [{"content": [{"type": "output_text", "text": " Atestado técnico \n"}]}]}
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+
+    result = OpenAIVisionOcrService(fallback=_FallbackOcr()).reconhecer(_FakeImage(), pagina=4)
+
+    assert captured["url"].endswith("/responses")
+    content = captured["json"]["input"][0]["content"]
+    assert content[1]["type"] == "input_image"
+    assert content[1]["image_url"].startswith("data:image/jpeg;base64,")
+    assert captured["json"]["store"] is False
+    assert result.texto == "Atestado técnico"
+    assert result.pagina == 4
+    assert result.status == "sucesso"
+    assert result.confianca == 0.80
+
+
+def test_ocr_openai_usa_tesseract_quando_api_falha(monkeypatch):
+    import httpx
+
+    from backend.services.ocr_service import OpenAIVisionOcrService
+
+    monkeypatch.setattr(httpx, "post", lambda url, **kwargs: _openai_response({"error": {}}, status_code=429))
+
+    result = OpenAIVisionOcrService(fallback=_FallbackOcr()).reconhecer(_FakeImage(), pagina=1)
+
+    assert result.texto == "tesseract"
+
+
+def test_ocr_openai_usa_tesseract_quando_pagina_volta_vazia(monkeypatch):
+    import httpx
+
+    from backend.services.ocr_service import OpenAIVisionOcrService
+
+    monkeypatch.setattr(
+        httpx,
+        "post",
+        lambda url, **kwargs: _openai_response({"status": "completed", "output_text": "   "}),
+    )
+
+    result = OpenAIVisionOcrService(fallback=_FallbackOcr()).reconhecer(_FakeImage(), pagina=1)
+
+    assert result.texto == "tesseract"

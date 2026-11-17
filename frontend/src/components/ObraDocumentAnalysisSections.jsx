@@ -134,6 +134,110 @@ function DocumentFailureDetails({ documentos = [] }) {
   );
 }
 
+function ExigenciasCategoryFilter({ categories, totalCount, activeCategory, onSelectCategory }) {
+  if (!categories.length) return null;
+
+  return (
+    <div
+      className="rounded-xl border p-3 space-y-2.5"
+      style={{ backgroundColor: "var(--card-bg)", borderColor: "var(--border-subtle)" }}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span
+          className="text-[11px] font-bold uppercase tracking-wider"
+          style={{ color: "var(--text-dim)" }}
+        >
+          Categorias do OCR
+        </span>
+        {activeCategory !== "todas" && (
+          <button
+            type="button"
+            onClick={() => onSelectCategory("todas")}
+            className="text-[11px] font-semibold cursor-pointer transition hover:text-amber-500"
+            style={{ color: "var(--badge-mod-text)" }}
+          >
+            Limpar filtro
+          </button>
+        )}
+      </div>
+
+      <div
+        role="group"
+        aria-label="Filtrar exigências por categoria"
+        className="flex flex-wrap items-center gap-2"
+      >
+        <button
+          type="button"
+          aria-pressed={activeCategory === "todas"}
+          onClick={() => onSelectCategory("todas")}
+          className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition cursor-pointer hover:border-amber-500"
+          style={
+            activeCategory === "todas"
+              ? {
+                  backgroundColor: "var(--badge-mod-bg)",
+                  borderColor: "var(--accent-amber)",
+                  color: "var(--badge-mod-text)",
+                }
+              : {
+                  backgroundColor: "var(--btn-action-bg)",
+                  borderColor: "var(--btn-action-border)",
+                  color: "var(--btn-action-text)",
+                }
+          }
+        >
+          <span>Todas</span>
+          <span
+            className="rounded-md px-1.5 py-0.5 text-[10px] font-mono font-bold leading-none"
+            style={{
+              backgroundColor: activeCategory === "todas" ? "var(--badge-mod-border)" : "var(--badge-loc-bg)",
+              color: activeCategory === "todas" ? "var(--badge-mod-text)" : "var(--text-muted)",
+            }}
+          >
+            {totalCount}
+          </span>
+        </button>
+
+        {categories.map((category) => {
+          const isSelected = activeCategory === category.key;
+          return (
+            <button
+              key={category.key}
+              type="button"
+              aria-pressed={isSelected}
+              onClick={() => onSelectCategory(isSelected ? "todas" : category.key)}
+              className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition cursor-pointer hover:border-amber-500"
+              style={
+                isSelected
+                  ? {
+                      backgroundColor: "var(--badge-mod-bg)",
+                      borderColor: "var(--accent-amber)",
+                      color: "var(--badge-mod-text)",
+                    }
+                  : {
+                      backgroundColor: "var(--btn-action-bg)",
+                      borderColor: "var(--btn-action-border)",
+                      color: "var(--btn-action-text)",
+                    }
+              }
+            >
+              <span>{category.label}</span>
+              <span
+                className="rounded-md px-1.5 py-0.5 text-[10px] font-mono font-bold leading-none"
+                style={{
+                  backgroundColor: isSelected ? "var(--badge-mod-border)" : "var(--badge-loc-bg)",
+                  color: isSelected ? "var(--badge-mod-text)" : "var(--text-muted)",
+                }}
+              >
+                {category.count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function ExigenciasSection({ obra, onAnalysisComplete }) {
   const [retryToken, setRetryToken] = useState(0);
 
@@ -163,6 +267,7 @@ export function ExigenciasSection({ obra, onAnalysisComplete }) {
 
 function ExigenciasRequest({ obra, force, onAnalysisComplete, onRetry }) {
   const [result, setResult] = useState(() => ({ status: "loading", data: null, error: "", source: null }));
+  const [selectedCategory, setSelectedCategory] = useState("todas");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -203,11 +308,45 @@ function ExigenciasRequest({ obra, force, onAnalysisComplete, onRetry }) {
     };
   }, [force, obra, onAnalysisComplete]);
 
-  const exigenciasPorCategoria = useMemo(() => (result.data?.exigencias || []).reduce((groups, item) => {
-    const category = item.categoria || "nao_classificado";
-    groups[category] = [...(groups[category] || []), item];
-    return groups;
-  }, {}), [result.data]);
+  const categoriasDisponiveis = useMemo(() => {
+    const grouped = (result.data?.exigencias || []).reduce((groups, item) => {
+      const category = item.categoria || "nao_classificado";
+      groups[category] = [...(groups[category] || []), item];
+      return groups;
+    }, {});
+
+    const orderedKeys = [
+      ...Object.keys(CATEGORY_LABELS).filter((key) => grouped[key]?.length),
+      ...Object.keys(grouped).filter((key) => !(key in CATEGORY_LABELS)),
+    ];
+
+    return orderedKeys.map((key) => ({
+      key,
+      label: CATEGORY_LABELS[key] || "Exigências para revisão",
+      sectionAriaLabel: CATEGORY_LABELS[key] || "Exigências",
+      items: grouped[key],
+      count: grouped[key].length,
+    }));
+  }, [result.data]);
+
+  const totalExigencias = useMemo(
+    () => categoriasDisponiveis.reduce((sum, cat) => sum + cat.count, 0),
+    [categoriasDisponiveis],
+  );
+
+  const activeCategory = selectedCategory === "todas"
+    || categoriasDisponiveis.some((cat) => cat.key === selectedCategory)
+    ? selectedCategory
+    : "todas";
+
+  const categoriasVisiveis = useMemo(
+    () => (
+      activeCategory === "todas"
+        ? categoriasDisponiveis
+        : categoriasDisponiveis.filter((cat) => cat.key === activeCategory)
+    ),
+    [activeCategory, categoriasDisponiveis],
+  );
 
   if (result.status === "loading") {
     return (
@@ -241,18 +380,40 @@ function ExigenciasRequest({ obra, force, onAnalysisComplete, onRetry }) {
 
       {(result.status === "success" || result.status === "partial") && (
         <>
+          <ExigenciasCategoryFilter
+            categories={categoriasDisponiveis}
+            totalCount={totalExigencias}
+            activeCategory={activeCategory}
+            onSelectCategory={setSelectedCategory}
+          />
           <div className="rounded-xl border p-3 text-xs leading-relaxed" style={{ backgroundColor: "var(--badge-mod-bg)", borderColor: "var(--badge-mod-border)", color: "var(--text-secondary)" }}>
             {result.data?.mensagem}
+            {result.data?.analise_assistida && (
+              <span className="block mt-1 font-semibold" style={{ color: "var(--text-secondary)" }}>
+                Resultado produzido por análise assistida e validado contra os trechos abaixo.
+              </span>
+            )}
+            {!result.data?.analise_assistida && result.data?.analise_assistida_status === "indisponivel" && (
+              <span className="block mt-1" style={{ color: "var(--text-muted)" }}>
+                A análise assistida está indisponível no momento; este é o resultado local de fallback.
+              </span>
+            )}
             <span className="block mt-1" style={{ color: "var(--text-muted)" }}>
               A análise identifica trechos do edital e não confirma habilitação, regularidade ou suficiência jurídica da empresa.
             </span>
           </div>
           <DocumentFailureDetails documentos={result.data?.documentos_analisados} />
-          {Object.entries(exigenciasPorCategoria).map(([category, items]) => (
-            <section key={category} className="space-y-2" aria-label={CATEGORY_LABELS[category] || "Exigências"}>
-              <h3 className="text-xs font-bold" style={{ color: "var(--text-primary)" }}>
-                {CATEGORY_LABELS[category] || "Exigências para revisão"}
-              </h3>
+          {categoriasVisiveis.map(({ key: category, label, sectionAriaLabel, items, count }) => (
+            <section key={category} className="space-y-2.5" aria-label={sectionAriaLabel}>
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-xs font-bold" style={{ color: "var(--text-primary)" }}>
+                  {label}
+                </h3>
+                <span className="text-[11px] font-medium" style={{ color: "var(--text-dim)" }}>
+                  {count} {count === 1 ? "exigência" : "exigências"}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
               {items.map((item, index) => (
                 <article key={`${item.documento_id}-${item.pagina}-${index}`} className="rounded-xl border p-3 space-y-2" style={{ backgroundColor: "var(--card-bg)", borderColor: "var(--border-subtle)" }}>
                   <p className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>{item.rotulo}</p>
@@ -261,6 +422,8 @@ function ExigenciasRequest({ obra, force, onAnalysisComplete, onRetry }) {
                     <span>{item.titulo_documento}, página {item.pagina}</span>
                     <span>· confiança da extração: {Math.round((item.confianca || 0) * 100)}%</span>
                     {item.status === "referenciado_em_outro_documento" && <span>· referência a outro documento</span>}
+                    {item.estado === "incerto" && <span>· confirmação necessária</span>}
+                    {item.estado === "nao_identificado" && <span>· não confirmado no trecho</span>}
                   </div>
                   <details className="text-xs" style={{ color: "var(--text-muted)" }}>
                     <summary className="cursor-pointer font-semibold">Ver trecho original</summary>
@@ -274,6 +437,7 @@ function ExigenciasRequest({ obra, force, onAnalysisComplete, onRetry }) {
                   )}
                 </article>
               ))}
+              </div>
             </section>
           ))}
           <RetryButton onClick={onRetry}>Reprocessar análise</RetryButton>

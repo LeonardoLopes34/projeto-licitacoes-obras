@@ -1,7 +1,7 @@
 import pytest
-from fastapi.testclient import TestClient
 
 import backend.main as main_module
+from backend.tests.asgi_client import get
 
 
 @pytest.mark.asyncio
@@ -69,7 +69,7 @@ async def test_endpoint_de_obras_permite_alterar_periodo(monkeypatch):
 
 
 def test_endpoint_rejeita_tamanho_de_pagina_abaixo_do_limite_do_pncp():
-    response = TestClient(main_module.app).get(
+    response = get(main_module.app,
         "/api/v1/obras?inicial_date=20260801&final_date=20260803&tamanho_pagina=1"
     )
 
@@ -78,12 +78,30 @@ def test_endpoint_rejeita_tamanho_de_pagina_abaixo_do_limite_do_pncp():
 
 
 def test_endpoint_rejeita_tamanho_de_pagina_acima_do_limite_do_pncp():
-    response = TestClient(main_module.app).get(
+    response = get(main_module.app,
         "/api/v1/obras?inicial_date=20260801&final_date=20260803&tamanho_pagina=51"
     )
 
     assert response.status_code == 422
     assert "less than or equal to 50" in response.text
+
+
+def test_endpoint_progressivo_envia_eventos_sse(monkeypatch):
+    async def fake_stream(**kwargs):
+        assert kwargs["modalidade"] == 4
+        yield {"tipo": "progresso", "dados": [{"id_pncp": "1"}], "metadados": {"parcial": False}}
+        yield {"tipo": "concluido", "status": "sucesso_real", "dados": [{"id_pncp": "1"}], "metadados": {}}
+
+    monkeypatch.setattr(main_module, "stream_licitacoes_construction", fake_stream)
+    response = get(
+        main_module.app,
+        "/api/v1/obras/stream?inicial_date=20260801&final_date=20260803&modalidade=4",
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert "event: progresso" in response.text
+    assert "event: concluido" in response.text
 
 
 @pytest.mark.asyncio
@@ -116,7 +134,7 @@ def test_endpoint_de_documentos_normaliza_resposta(monkeypatch):
         }
 
     monkeypatch.setattr(main_module, "buscar_documentos_pncp", fake_documents)
-    response = TestClient(main_module.app).get(
+    response = get(main_module.app,
         "/api/v1/obras/12345678901234/2026/7/documentos"
     )
 
@@ -125,7 +143,7 @@ def test_endpoint_de_documentos_normaliza_resposta(monkeypatch):
 
 
 def test_endpoint_de_documentos_rejeita_cnpj_invalido():
-    response = TestClient(main_module.app).get(
+    response = get(main_module.app,
         "/api/v1/obras/123-45678901234/2026/7/documentos"
     )
 

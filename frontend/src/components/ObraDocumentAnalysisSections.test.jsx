@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buscarDocumentos } from "../api";
 import { DocumentosSection, ExigenciasSection } from "./ObraDocumentAnalysisSections";
@@ -114,5 +114,75 @@ describe("ExigenciasSection", () => {
     const evidence = article.querySelector("details");
     expect(evidence).not.toBeNull();
     expect(evidence).toContainElement(within(article).getByText("7.3 Apresentar declaração de inexistência de fatos impeditivos."));
+  });
+
+  it("permite filtrar as exigências clicando nas categorias do OCR no topo", async () => {
+    const { buscarExigencias } = await import("../api");
+    buscarExigencias.mockResolvedValue({
+      status: "sucesso",
+      mensagem: "Exigências identificadas no edital.",
+      exigencias: [
+        {
+          ...baseExigencia,
+          categoria: "declaracoes",
+          rotulo: "Declaração de visita técnica",
+          descricao_resumida: "Apresentar declaração de conhecimento do local da obra.",
+          evidencia: "Item 8.1 Declaração de visita técnica.",
+        },
+        {
+          ...baseExigencia,
+          categoria: "qualificacao_tecnica",
+          rotulo: "Registro no CREA/CAU",
+          descricao_resumida: "Comprovar registro da empresa e do responsável técnico.",
+          pagina: 14,
+          evidencia: "Item 6.2 Registro ou inscrição na entidade profissional competente.",
+        },
+        {
+          ...baseExigencia,
+          categoria: "qualificacao_tecnica",
+          rotulo: "Atestado de capacidade técnica",
+          descricao_resumida: "Apresentar CAT compatível com pavimentação.",
+          pagina: 15,
+          evidencia: "Item 6.3 Atestado de capacidade técnico-profissional.",
+        },
+      ],
+    });
+
+    render(<ExigenciasSection obra={{ cnpj: "123", ano: 2026, sequencial: 1 }} />);
+
+    const filterGroup = await screen.findByRole("group", { name: "Filtrar exigências por categoria" });
+    const btnTodas = within(filterGroup).getByRole("button", { name: /Todas/i });
+    const btnTecnica = within(filterGroup).getByRole("button", { name: /Qualificação técnica/i });
+    const btnDeclaracoes = within(filterGroup).getByRole("button", { name: /Declarações/i });
+
+    expect(btnTodas).toHaveAttribute("aria-pressed", "true");
+    expect(btnTodas).toHaveTextContent("3");
+    expect(btnTecnica).toHaveAttribute("aria-pressed", "false");
+    expect(btnTecnica).toHaveTextContent("2");
+    expect(btnDeclaracoes).toHaveAttribute("aria-pressed", "false");
+    expect(btnDeclaracoes).toHaveTextContent("1");
+    expect(screen.getAllByRole("article")).toHaveLength(3);
+
+    fireEvent.click(btnTecnica);
+
+    expect(btnTecnica).toHaveAttribute("aria-pressed", "true");
+    expect(btnTodas).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getAllByRole("article")).toHaveLength(2);
+    expect(screen.getByText("Registro no CREA/CAU")).toBeInTheDocument();
+    expect(screen.getByText("Atestado de capacidade técnica")).toBeInTheDocument();
+    expect(screen.queryByText("Declaração de visita técnica")).not.toBeInTheDocument();
+
+    fireEvent.click(btnDeclaracoes);
+
+    expect(btnDeclaracoes).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getAllByRole("article")).toHaveLength(1);
+    expect(screen.getByText("Declaração de visita técnica")).toBeInTheDocument();
+    expect(screen.queryByText("Registro no CREA/CAU")).not.toBeInTheDocument();
+
+    // Clicar novamente na categoria ativa restaura todas as categorias
+    fireEvent.click(btnDeclaracoes);
+
+    expect(btnTodas).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getAllByRole("article")).toHaveLength(3);
   });
 });

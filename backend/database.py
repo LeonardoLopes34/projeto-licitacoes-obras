@@ -59,13 +59,33 @@ def _schema_bootstrap_permitted() -> bool:
 
 def init_db() -> None:
     """Faz bootstrap de banco vazio e executa limpeza independente do PNCP."""
-    from backend.models import EditalAnalysisModel, ObraModel  # noqa: F401 - registra modelos no metadata
+    from backend.models import (  # noqa: F401 - registra modelos no metadata
+        DocumentChunkModel,
+        DocumentIndexJobModel,
+        DocumentRequirementAnalysisModel,
+        DocumentRequirementItemModel,
+        EditalAnalysisModel,
+        IndexedDocumentModel,
+        ObraModel,
+        QuerySnapshotModel,
+    )
     from backend.services.db_service import cleanup_expired_obras, delete_mock_obras
+    from backend.services.vector_index_repository import purge_expired_inactive_derivatives
 
     if _schema_bootstrap_permitted():
         Base.metadata.create_all(bind=engine)
     else:
-        required_tables = {"obras", "edital_analyses", "document_snapshots"}
+        required_tables = {
+            "obras",
+            "edital_analyses",
+            "document_snapshots",
+            "query_snapshots",
+            "indexed_documents",
+            "document_chunks",
+            "document_index_jobs",
+            "document_requirement_analyses",
+            "document_requirement_items",
+        }
         existing_tables = set(inspect(engine).get_table_names())
         missing_tables = required_tables - existing_tables
         if missing_tables:
@@ -79,3 +99,4 @@ def init_db() -> None:
     with SessionLocal() as db:
         delete_mock_obras(db)
         cleanup_expired_obras(db, max_age_days=settings.retention_days)
+    purge_expired_inactive_derivatives(max_age_days=settings.vector_index_retention_days)

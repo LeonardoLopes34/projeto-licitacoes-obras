@@ -11,6 +11,7 @@ export default function StatusBar({
   if (!statusInfo && typeof volumeTotal !== "number") return null;
 
   const totalObras = statusInfo?.total ?? filteredTotal ?? 0;
+  const quantidadeSemValor = Number(statusInfo?.metadados?.quantidade_sem_valor || 0);
   const hasFilter = filteredTotal !== undefined && filteredTotal !== totalObras;
 
   // Formata o volume total para moeda brasileira R$ 000.000.000,00
@@ -43,7 +44,7 @@ export default function StatusBar({
             className="block text-[11px] font-bold uppercase tracking-wider"
             style={{ color: "var(--text-dim)" }}
           >
-            Volume Total Estimado
+            Volume estimado da consulta
           </span>
           <span
             className="text-lg sm:text-2xl font-bold font-mono tracking-tight text-amber-500"
@@ -51,6 +52,11 @@ export default function StatusBar({
           >
             {formattedVolume}
           </span>
+          {quantidadeSemValor > 0 && (
+            <span className="block text-[11px]" style={{ color: "var(--text-muted)" }}>
+              {quantidadeSemValor} {quantidadeSemValor === 1 ? "valor não informado" : "valores não informados"}
+            </span>
+          )}
         </div>
       </div>
 

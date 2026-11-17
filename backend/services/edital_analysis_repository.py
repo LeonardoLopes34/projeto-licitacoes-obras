@@ -12,6 +12,7 @@ from backend.config import settings
 from backend.database import SessionLocal
 from backend.models.edital_analysis_model import EditalAnalysisModel
 from backend.schemas import ResultadoExigencias
+from backend.services.vector_index_repository import assisted_summaries, get_requirement_analysis_status
 
 
 logger = logging.getLogger(__name__)
@@ -129,6 +130,14 @@ def obter_resumos_contratacoes(contratacao_chaves: set[str]) -> dict[str, dict[s
     """Retorna resumos já calculados para os cards, sem iniciar OCR/download."""
     if not contratacao_chaves:
         return {}
+    # A análise assistida tem precedência somente quando já foi validada e
+    # ativada; a análise local continua preenchendo qualquer contratação sem
+    # resultado OpenAI compatível.
+    summaries = assisted_summaries(contratacao_chaves)
+    assisted_statuses = {
+        key: get_requirement_analysis_status(key)
+        for key in contratacao_chaves - summaries.keys()
+    }
     try:
         with SessionLocal() as db:
             records = db.scalars(
@@ -139,17 +148,20 @@ def obter_resumos_contratacoes(contratacao_chaves: set[str]) -> dict[str, dict[s
                 )
                 .order_by(EditalAnalysisModel.updated_at.desc())
             ).all()
-        summaries: dict[str, dict[str, object]] = {}
         for record in records:
             if record.contratacao_chave in summaries:
                 continue
             result = ResultadoExigencias.model_validate(record.resultado)
-            summaries[record.contratacao_chave] = {
+            summary: dict[str, object] = {
                 "status": result.status,
                 "total_exigencias": result.total_exigencias,
                 "categorias": result.categorias,
                 "analisador_versao": result.analisador_versao,
             }
+            assisted_status = assisted_statuses.get(record.contratacao_chave)
+            if assisted_status is not None:
+                summary["analise_assistida_status"] = assisted_status
+            summaries[record.contratacao_chave] = summary
         return summaries
     except (SQLAlchemyError, ValidationError) as exc:
         logger.warning("Resumo persistente de análise indisponível: %s", exc)

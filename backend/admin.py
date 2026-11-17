@@ -14,6 +14,14 @@ def verificar_admin(x_admin_key: str | None = Header(default=None, alias="X-Admi
         raise HTTPException(status_code=401, detail="Credencial administrativa inválida")
 
 
+def verificar_api_key(x_api_key: str | None = Header(default=None, alias="X-API-Key")) -> None:
+    """Protege /api/v1 para integrações (ERP). Sem API_KEY configurada, a API fica aberta (só dev/test)."""
+    if not settings.api_key:
+        return
+    if not x_api_key or not secrets.compare_digest(x_api_key, settings.api_key):
+        raise HTTPException(status_code=401, detail="Chave de API inválida")
+
+
 admin_router = APIRouter(prefix="/admin", tags=["admin"])
 
 
